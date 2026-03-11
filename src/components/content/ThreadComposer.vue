@@ -21,15 +21,17 @@
           @update:model-value="onModelSelect"
         />
 
-        <ComposerDropdown
-          class="thread-composer-control"
-          :model-value="selectedReasoningEffort"
-          :options="reasoningOptions"
-          :placeholder="t('composer_thinking')"
-          open-direction="up"
-          :disabled="disabled || !activeThreadId || isTurnInProgress"
-          @update:model-value="onReasoningEffortSelect"
-        />
+        <UiTooltip :content="t('composer_reasoning_help')">
+          <ComposerDropdown
+            class="thread-composer-control"
+            :model-value="selectedReasoningEffort"
+            :options="reasoningOptions"
+            :placeholder="t('composer_thinking')"
+            open-direction="up"
+            :disabled="disabled || !activeThreadId || isTurnInProgress"
+            @update:model-value="onReasoningEffortSelect"
+          />
+        </UiTooltip>
 
         <button
           v-if="isTurnInProgress"
@@ -60,6 +62,7 @@ import { computed, ref, watch } from 'vue'
 import type { ReasoningEffort } from '../../types/codex'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
+import UiTooltip from '../ui/UiTooltip.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
 
