@@ -9,7 +9,9 @@
       {{ t('conversation_empty') }}
     </p>
 
-    <ul v-else ref="conversationListRef" class="conversation-list" @scroll="onConversationScroll">
+    <ScrollAreaRoot v-else class="conversation-scroll">
+      <ScrollAreaViewport ref="conversationListRef" class="conversation-list" @scroll="onConversationScroll">
+        <ul class="conversation-list-inner">
       <li
         v-for="request in pendingRequests"
         :key="`server-request:${request.id}`"
@@ -191,8 +193,13 @@
           </div>
         </div>
       </li>
-      <li ref="bottomAnchorRef" class="conversation-bottom-anchor" />
-    </ul>
+          <li ref="bottomAnchorRef" class="conversation-bottom-anchor" />
+        </ul>
+      </ScrollAreaViewport>
+      <ScrollAreaScrollbar class="conversation-scrollbar" orientation="vertical">
+        <ScrollAreaThumb class="conversation-scrollbar-thumb" />
+      </ScrollAreaScrollbar>
+    </ScrollAreaRoot>
 
     <div v-if="modalImageUrl.length > 0" class="image-modal-backdrop" @click="closeImageModal">
       <div class="image-modal-content" @click.stop>
@@ -207,6 +214,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { ScrollAreaRoot, ScrollAreaScrollbar, ScrollAreaThumb, ScrollAreaViewport } from 'radix-vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import IconTablerDots from '../icons/IconTablerDots.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
@@ -790,7 +798,24 @@ onBeforeUnmount(() => {
 }
 
 .conversation-list {
-  @apply h-full min-h-0 list-none m-0 px-6 py-0 overflow-y-auto overflow-x-visible flex flex-col gap-3;
+  @apply h-full min-h-0 overflow-y-auto overflow-x-visible;
+}
+
+.conversation-list-inner {
+  @apply m-0 flex min-h-full list-none flex-col gap-3 px-6 py-0;
+}
+
+.conversation-scroll {
+  @apply h-full min-h-0;
+}
+
+.conversation-scrollbar {
+  @apply flex w-3 touch-none select-none p-0.5;
+}
+
+.conversation-scrollbar-thumb {
+  @apply relative flex-1 rounded-full;
+  background: color-mix(in srgb, var(--border-strong) 88%, transparent);
 }
 
 .conversation-item {

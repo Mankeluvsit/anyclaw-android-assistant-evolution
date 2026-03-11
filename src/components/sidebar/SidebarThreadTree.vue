@@ -48,7 +48,9 @@
 
     <p v-else-if="isLoading && groups.length === 0" class="thread-tree-loading">{{ t('threads_loading') }}</p>
 
-    <div v-else ref="groupsContainerRef" class="thread-tree-groups" :style="groupsContainerStyle">
+    <ScrollAreaRoot v-else class="thread-tree-scroll">
+      <ScrollAreaViewport ref="groupsContainerRef" class="thread-tree-groups">
+        <div :style="groupsContainerStyle">
       <article
         v-for="group in filteredGroups"
         :key="group.projectName"
@@ -196,12 +198,18 @@
             </button>
           </SidebarMenuRow>
       </article>
-    </div>
+        </div>
+      </ScrollAreaViewport>
+      <ScrollAreaScrollbar class="thread-tree-scrollbar" orientation="vertical">
+        <ScrollAreaThumb class="thread-tree-scrollbar-thumb" />
+      </ScrollAreaScrollbar>
+    </ScrollAreaRoot>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ScrollAreaRoot, ScrollAreaScrollbar, ScrollAreaThumb, ScrollAreaViewport } from 'radix-vue'
 import type { ComponentPublicInstance } from 'vue'
 import type { UiProjectGroup, UiThread } from '../../types/codex'
 import IconTablerArchive from '../icons/IconTablerArchive.vue'
@@ -970,7 +978,20 @@ onBeforeUnmount(() => {
 }
 
 .thread-tree-groups {
-  @apply pr-0.5 relative;
+  @apply relative h-full pr-0.5;
+}
+
+.thread-tree-scroll {
+  @apply min-h-0 flex-1;
+}
+
+.thread-tree-scrollbar {
+  @apply flex w-3 touch-none select-none p-0.5;
+}
+
+.thread-tree-scrollbar-thumb {
+  @apply relative flex-1 rounded-full;
+  background: color-mix(in srgb, var(--border-strong) 88%, transparent);
 }
 
 .project-group {
