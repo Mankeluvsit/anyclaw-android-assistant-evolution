@@ -1,54 +1,74 @@
 <template>
-  <div v-if="open" class="settings-panel-backdrop" @click="$emit('close')">
-    <aside class="settings-panel" @click.stop>
-      <header class="settings-panel-header">
-        <div>
-          <p class="settings-panel-eyebrow">{{ t('settings_label') }}</p>
-          <h2 class="settings-panel-title">{{ title }}</h2>
+  <DialogRoot :open="open" @update:open="onOpenChange">
+    <DialogPortal>
+      <DialogOverlay class="settings-panel-backdrop" />
+      <DialogContent class="settings-panel">
+        <header class="settings-panel-header">
+          <div>
+            <p class="settings-panel-eyebrow">{{ t('settings_label') }}</p>
+            <DialogTitle class="settings-panel-title">{{ title }}</DialogTitle>
+          </div>
+          <DialogClose as-child>
+            <UiButton
+              size="icon"
+              variant="surface"
+              class="settings-panel-close"
+              :aria-label="t('settings_close')"
+            >
+              <IconTablerX class="settings-panel-close-icon" />
+            </UiButton>
+          </DialogClose>
+        </header>
+        <div class="settings-panel-body">
+          <slot />
         </div>
-        <button
-          type="button"
-          class="settings-panel-close"
-          :aria-label="t('settings_close')"
-          @click="$emit('close')"
-        >
-          <IconTablerX class="settings-panel-close-icon" />
-        </button>
-      </header>
-      <div class="settings-panel-body">
-        <slot />
-      </div>
-    </aside>
-  </div>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <script setup lang="ts">
+import {
+  DialogClose,
+  DialogContent,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from 'radix-vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
+import UiButton from './UiButton.vue'
 
 const { t } = useUiI18n()
 
-defineProps<{
+const props = defineProps<{
   open: boolean
   title: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   close: []
+  'update:open': [value: boolean]
 }>()
+
+function onOpenChange(value: boolean): void {
+  emit('update:open', value)
+  if (!value && props.open) emit('close')
+}
 </script>
 
 <style scoped>
 @reference "tailwindcss";
 
 .settings-panel-backdrop {
-  @apply fixed inset-0 z-[120] flex justify-end;
+  @apply fixed inset-0 z-[120];
   background: rgba(0, 0, 0, 0.48);
   backdrop-filter: blur(10px);
 }
 
 .settings-panel {
-  @apply h-full w-full max-w-md border-l px-5 py-5;
+  @apply fixed right-0 top-0 z-[121] h-full w-full max-w-md border-l px-5 py-5 outline-none;
   border-color: var(--border-subtle);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 97%, transparent), var(--surface-base));
@@ -72,15 +92,7 @@ defineEmits<{
 }
 
 .settings-panel-close {
-  @apply inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors duration-200;
-  border-color: var(--border-subtle);
-  background: var(--surface-elevated);
-  color: var(--text-muted);
-}
-
-.settings-panel-close:hover {
-  background: var(--surface-hover);
-  color: var(--text-default);
+  @apply shrink-0;
 }
 
 .settings-panel-close-icon {

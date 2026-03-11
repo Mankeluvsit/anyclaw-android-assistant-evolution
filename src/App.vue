@@ -86,15 +86,16 @@
             />
           </template>
           <template #actions>
-            <button
+            <UiButton
               class="header-settings-button"
-              type="button"
+              size="icon"
+              variant="surface"
               :aria-label="t('settings_open')"
               :title="t('settings_open')"
               @click="isSettingsPanelOpen = true"
             >
               <IconTablerSettings class="header-settings-icon" />
-            </button>
+            </UiButton>
           </template>
         </ContentHeader>
 
@@ -146,6 +147,7 @@
   <SettingsPanel
     :open="isSettingsPanelOpen"
     :title="t('settings_label')"
+    @update:open="isSettingsPanelOpen = $event"
     @close="isSettingsPanelOpen = false"
   >
     <section class="settings-section">
@@ -185,6 +187,7 @@ import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
 import SettingsPanel from './components/ui/SettingsPanel.vue'
 import ThemeSwitcher from './components/ui/ThemeSwitcher.vue'
+import UiButton from './components/ui/UiButton.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
@@ -806,16 +809,7 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .header-settings-button {
-  @apply inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors duration-200;
-  border-color: var(--border-subtle);
-  background: var(--surface-elevated);
-  color: var(--text-muted);
-  box-shadow: var(--shadow-soft);
-}
-
-.header-settings-button:hover {
-  background: var(--surface-hover);
-  color: var(--text-default);
+  @apply h-9 w-9;
 }
 
 .header-settings-icon {

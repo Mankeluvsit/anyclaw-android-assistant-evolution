@@ -1,16 +1,17 @@
 <template>
   <div class="theme-switcher" role="group" :aria-label="t('theme_label')">
-    <button
+    <UiButton
       v-for="option in options"
       :key="option.value"
-      type="button"
+      size="sm"
+      variant="ghost"
       class="theme-switcher-button"
       :class="{ 'is-active': modelValue === option.value }"
       :aria-pressed="modelValue === option.value"
       @click="$emit('update:modelValue', option.value)"
     >
       {{ option.label }}
-    </button>
+    </UiButton>
   </div>
 </template>
 
@@ -18,6 +19,7 @@
 import { computed } from 'vue'
 import { useUiI18n } from '../../composables/useUiI18n'
 import type { ThemePreference } from '../../composables/useUiTheme'
+import UiButton from './UiButton.vue'
 
 const { t } = useUiI18n()
 
@@ -47,13 +49,7 @@ const options = computed<Array<{ value: ThemePreference; label: string }>>(() =>
 }
 
 .theme-switcher-button {
-  @apply rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors duration-200;
-  color: var(--text-muted);
-}
-
-.theme-switcher-button:hover {
-  background: var(--surface-hover);
-  color: var(--text-default);
+  @apply rounded-full px-3 text-[11px] font-semibold uppercase tracking-[0.18em];
 }
 
 .theme-switcher-button.is-active {
