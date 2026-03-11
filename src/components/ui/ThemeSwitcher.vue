@@ -1,25 +1,27 @@
 <template>
-  <div class="theme-switcher" role="group" :aria-label="t('theme_label')">
-    <UiButton
+  <ToggleGroupRoot
+    class="theme-switcher"
+    type="single"
+    :model-value="modelValue"
+    :aria-label="t('theme_label')"
+    @update:model-value="onThemeChange"
+  >
+    <ToggleGroupItem
       v-for="option in options"
       :key="option.value"
-      size="sm"
-      variant="ghost"
       class="theme-switcher-button"
-      :class="{ 'is-active': modelValue === option.value }"
-      :aria-pressed="modelValue === option.value"
-      @click="$emit('update:modelValue', option.value)"
+      :value="option.value"
     >
       {{ option.label }}
-    </UiButton>
-  </div>
+    </ToggleGroupItem>
+  </ToggleGroupRoot>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ToggleGroupItem, ToggleGroupRoot } from 'radix-vue'
 import { useUiI18n } from '../../composables/useUiI18n'
 import type { ThemePreference } from '../../composables/useUiTheme'
-import UiButton from './UiButton.vue'
 
 const { t } = useUiI18n()
 
@@ -27,7 +29,7 @@ defineProps<{
   modelValue: ThemePreference
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'update:modelValue': [value: ThemePreference]
 }>()
 
@@ -36,6 +38,13 @@ const options = computed<Array<{ value: ThemePreference; label: string }>>(() =>
   { value: 'dark', label: t('theme_dark') },
   { value: 'light', label: t('theme_light') },
 ])
+
+function onThemeChange(value: string | string[] | undefined): void {
+  if (Array.isArray(value)) return
+  if (value === 'system' || value === 'dark' || value === 'light') {
+    emit('update:modelValue', value)
+  }
+}
 </script>
 
 <style scoped>
@@ -49,10 +58,16 @@ const options = computed<Array<{ value: ThemePreference; label: string }>>(() =>
 }
 
 .theme-switcher-button {
-  @apply rounded-full px-3 text-[11px] font-semibold uppercase tracking-[0.18em];
+  @apply rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] outline-none transition-colors duration-200;
+  color: var(--text-muted);
 }
 
-.theme-switcher-button.is-active {
+.theme-switcher-button:hover {
+  background: var(--surface-hover);
+  color: var(--text-default);
+}
+
+.theme-switcher-button[data-state='on'] {
   background: var(--accent-primary);
   color: var(--accent-on-primary);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 45%, transparent);

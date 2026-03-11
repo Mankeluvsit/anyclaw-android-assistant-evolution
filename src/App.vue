@@ -160,17 +160,12 @@
 
     <section class="settings-section">
       <p class="settings-section-label">{{ t('settings_section_language') }}</p>
-      <label class="ui-locale-label" for="ui-locale-select">{{ t('app_language') }}</label>
-      <select
-        id="ui-locale-select"
-        class="ui-locale-select"
-        :value="localePreference"
-        @change="onLocalePreferenceChange"
-      >
-        <option value="system">{{ t('app_language_system') }}</option>
-        <option value="zh-CN">{{ t('app_language_zh_cn') }}</option>
-        <option value="en">{{ t('app_language_en') }}</option>
-      </select>
+      <label class="ui-locale-label">{{ t('app_language') }}</label>
+      <UiSelect
+        :model-value="localePreference"
+        :options="localeOptions"
+        @update:model-value="onLocalePreferenceChange"
+      />
     </section>
   </SettingsPanel>
 </template>
@@ -188,6 +183,7 @@ import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vu
 import SettingsPanel from './components/ui/SettingsPanel.vue'
 import ThemeSwitcher from './components/ui/ThemeSwitcher.vue'
 import UiButton from './components/ui/UiButton.vue'
+import UiSelect from './components/ui/UiSelect.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
@@ -204,6 +200,11 @@ const OPENCLAW_GATEWAY_PORT_STORAGE_KEY = 'anyclaw.openclaw.gateway.port.v1'
 const OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY = 'anyclaw.openclaw.controlui.port.v1'
 const DEFAULT_OPENCLAW_GATEWAY_PORT = '18789'
 const DEFAULT_OPENCLAW_CONTROL_UI_PORT = '19001'
+const localeOptions = computed(() => [
+  { value: 'system', label: t('app_language_system') },
+  { value: 'zh-CN', label: t('app_language_zh_cn') },
+  { value: 'en', label: t('app_language_en') },
+])
 
 function resolveRuntimePort(
   queryName: string,
@@ -470,9 +471,7 @@ function onBranchFromMessage(messageId: string): void {
   })()
 }
 
-function onLocalePreferenceChange(event: Event): void {
-  const target = event.target as HTMLSelectElement | null
-  const value = target?.value
+function onLocalePreferenceChange(value: string): void {
   if (value === 'system' || value === 'zh-CN' || value === 'en') {
     setLocalePreference(value as LocalePreference)
   }
