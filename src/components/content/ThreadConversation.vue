@@ -807,11 +807,13 @@ onBeforeUnmount(() => {
 }
 
 .conversation-loading {
-  @apply m-0 px-6 text-sm text-slate-500;
+  @apply m-0 px-6 text-sm;
+  color: var(--text-muted);
 }
 
 .conversation-empty {
-  @apply m-0 px-6 text-sm text-slate-500;
+  @apply m-0 px-6 text-sm;
+  color: var(--text-muted);
 }
 
 .conversation-list {
@@ -852,19 +854,25 @@ onBeforeUnmount(() => {
 }
 
 .request-card {
-  @apply w-full max-w-180 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex flex-col gap-2;
+  @apply w-full max-w-180 rounded-xl border px-4 py-3 flex flex-col gap-2;
+  border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--surface-elevated));
+  box-shadow: var(--shadow-soft);
 }
 
 .request-title {
-  @apply m-0 text-sm leading-5 font-semibold text-amber-900;
+  @apply m-0 text-sm leading-5 font-semibold;
+  color: var(--text-default);
 }
 
 .request-meta {
-  @apply m-0 text-xs leading-4 text-amber-700;
+  @apply m-0 text-xs leading-4;
+  color: var(--text-muted);
 }
 
 .request-reason {
-  @apply m-0 text-sm leading-5 text-amber-900 whitespace-pre-wrap;
+  @apply m-0 text-sm leading-5 whitespace-pre-wrap;
+  color: var(--text-default);
 }
 
 .request-actions {
@@ -872,11 +880,16 @@ onBeforeUnmount(() => {
 }
 
 .request-button {
-  @apply rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-900 hover:bg-amber-100 transition;
+  @apply rounded-md border px-3 py-1.5 text-xs transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
 }
 
 .request-button-primary {
-  @apply border-amber-500 bg-amber-500 text-white hover:bg-amber-600;
+  border-color: color-mix(in srgb, var(--accent-primary) 54%, transparent);
+  background: var(--accent-primary);
+  color: var(--accent-on-primary);
 }
 
 .request-user-input {
@@ -888,19 +901,31 @@ onBeforeUnmount(() => {
 }
 
 .request-question-title {
-  @apply m-0 text-sm leading-5 font-medium text-amber-900;
+  @apply m-0 text-sm leading-5 font-medium;
+  color: var(--text-default);
 }
 
 .request-question-text {
-  @apply m-0 text-xs leading-4 text-amber-800;
+  @apply m-0 text-xs leading-4;
+  color: var(--text-muted);
 }
 
 .request-select {
-  @apply h-8 rounded-md border border-amber-300 bg-white px-2 text-sm text-amber-900;
+  @apply h-8 rounded-md border px-2 text-sm;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
 }
 
 .request-input {
-  @apply h-8 rounded-md border border-amber-300 bg-white px-2 text-sm text-amber-900 placeholder:text-amber-500;
+  @apply h-8 rounded-md border px-2 text-sm;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
+}
+
+.request-input::placeholder {
+  color: var(--text-muted);
 }
 
 .live-overlay-inline {
@@ -908,11 +933,13 @@ onBeforeUnmount(() => {
 }
 
 .live-overlay-label {
-  @apply m-0 text-sm leading-5 font-medium text-zinc-600;
+  @apply m-0 text-sm leading-5 font-medium;
+  color: var(--text-default);
 }
 
 .live-overlay-reasoning {
-  @apply m-0 text-sm leading-5 text-zinc-500 whitespace-pre-wrap;
+  @apply m-0 text-sm leading-5 whitespace-pre-wrap;
+  color: var(--text-muted);
 }
 
 .live-overlay-error {
@@ -942,7 +969,9 @@ onBeforeUnmount(() => {
 }
 
 .message-image-button {
-  @apply block rounded-xl overflow-hidden border border-slate-300 bg-white p-0 transition hover:border-slate-400;
+  @apply block rounded-xl overflow-hidden border p-0 transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
 }
 
 .message-image-preview {
@@ -954,31 +983,43 @@ onBeforeUnmount(() => {
 }
 
 .message-text {
-  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap text-slate-800;
+  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap;
+  color: var(--text-default);
 }
 
 .message-action-menu {
-  @apply mt-2 flex flex-wrap gap-2 rounded-lg border border-slate-300 bg-white px-2 py-2 shadow-sm;
+  @apply mt-2 flex flex-wrap gap-2 rounded-lg border px-2 py-2;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-soft);
 }
 
 .message-action-button {
-  @apply rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 transition hover:bg-slate-100;
+  @apply rounded-md border px-2.5 py-1 text-xs transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
 }
 
 .message-action-button:disabled {
-  @apply cursor-not-allowed opacity-50 hover:bg-white;
+  @apply cursor-not-allowed opacity-50;
 }
 
 .message-inline-code {
-  @apply rounded-md border border-slate-200 bg-slate-100/60 px-1.5 py-0.5 text-[0.875em] leading-[1.4] text-slate-900 font-mono;
+  @apply rounded-md border px-1.5 py-0.5 text-[0.875em] leading-[1.4] font-mono;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 84%, transparent);
+  color: var(--text-default);
 }
 
 .message-link {
-  @apply text-sm leading-relaxed text-[#0969da] underline underline-offset-2 hover:text-[#1f6feb];
+  @apply text-sm leading-relaxed underline underline-offset-2;
+  color: var(--accent-primary);
 }
 
 .message-file-link {
-  @apply text-sm leading-relaxed text-[#0969da] no-underline hover:text-[#1f6feb] hover:underline underline-offset-2;
+  @apply text-sm leading-relaxed no-underline hover:underline underline-offset-2;
+  color: var(--accent-primary);
 }
 
 .message-stack[data-role='user'] {
@@ -991,7 +1032,9 @@ onBeforeUnmount(() => {
 }
 
 .message-card[data-role='user'] {
-  @apply rounded-2xl bg-slate-200 px-4 py-3 max-w-[min(560px,100%)];
+  @apply rounded-2xl px-4 py-3 max-w-[min(560px,100%)];
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-hover));
+  box-shadow: var(--shadow-soft);
   width: fit-content;
   margin-left: auto;
   align-self: flex-end;
@@ -1013,11 +1056,13 @@ onBeforeUnmount(() => {
 }
 
 .worked-separator-line {
-  @apply h-px bg-zinc-300/80 flex-1;
+  @apply h-px flex-1;
+  background: color-mix(in srgb, var(--border-strong) 82%, transparent);
 }
 
 .worked-separator-text {
-  @apply m-0 text-sm leading-relaxed font-normal text-slate-800;
+  @apply m-0 text-sm leading-relaxed font-normal;
+  color: var(--text-muted);
 }
 
 .image-modal-backdrop {
@@ -1029,11 +1074,15 @@ onBeforeUnmount(() => {
 }
 
 .image-modal-close {
-  @apply absolute top-2 right-2 z-10 w-10 h-10 rounded-full bg-white/90 text-slate-900 border border-slate-300 flex items-center justify-center;
+  @apply absolute top-2 right-2 z-10 w-10 h-10 rounded-full border flex items-center justify-center;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  color: var(--text-default);
 }
 
 .image-modal-image {
-  @apply block max-w-full max-h-[90vh] rounded-2xl shadow-2xl bg-white;
+  @apply block max-w-full max-h-[90vh] rounded-2xl shadow-2xl;
+  background: var(--surface-elevated);
 }
 
 .icon-svg {

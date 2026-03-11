@@ -141,11 +141,15 @@ watch(
 }
 
 .thread-composer-shell {
-  @apply rounded-2xl border border-zinc-300 bg-white p-3 shadow-sm;
+  @apply rounded-2xl border p-3;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-soft);
 }
 
 .thread-composer-input {
-  @apply w-full min-w-0 h-11 rounded-xl border-0 bg-transparent px-1 text-sm text-zinc-900 outline-none transition;
+  @apply w-full min-w-0 h-11 rounded-xl border-0 bg-transparent px-1 text-sm outline-none transition-colors duration-200;
+  color: var(--text-default);
 }
 
 .thread-composer-input:focus {
@@ -153,7 +157,8 @@ watch(
 }
 
 .thread-composer-input:disabled {
-  @apply bg-zinc-100 text-zinc-500 cursor-not-allowed;
+  @apply cursor-not-allowed;
+  color: var(--text-muted);
 }
 
 .thread-composer-controls {
@@ -165,7 +170,20 @@ watch(
 }
 
 .thread-composer-submit {
-  @apply ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-900 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500;
+  @apply ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 transition-colors duration-200 disabled:cursor-not-allowed;
+  background: var(--accent-primary);
+  color: var(--accent-on-primary);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-primary) 24%, transparent);
+}
+
+.thread-composer-submit:hover {
+  background: color-mix(in srgb, var(--accent-primary) 88%, black);
+}
+
+.thread-composer-submit:disabled {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  box-shadow: none;
 }
 
 .thread-composer-submit-icon {
@@ -173,7 +191,17 @@ watch(
 }
 
 .thread-composer-stop {
-  @apply ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-900 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500;
+  @apply ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 transition-colors duration-200 disabled:cursor-not-allowed;
+  background: var(--surface-hover);
+  color: var(--text-default);
+}
+
+.thread-composer-stop:hover {
+  background: color-mix(in srgb, var(--surface-hover) 82%, white);
+}
+
+.thread-composer-stop:disabled {
+  color: var(--text-muted);
 }
 
 .thread-composer-stop-icon {

@@ -8,6 +8,11 @@ const STORAGE_KEY = 'anyclaw.ui.localePref'
 const messages: Record<UiLocale, Record<string, string>> = {
   'zh-CN': {
     app_language: '界面语言',
+    settings_label: '设置',
+    settings_open: '打开设置',
+    settings_close: '关闭设置',
+    settings_section_appearance: '外观',
+    settings_section_language: '语言',
     app_language_system: '跟随系统',
     app_language_zh_cn: '简体中文',
     app_language_en: 'English',
@@ -82,6 +87,11 @@ const messages: Record<UiLocale, Record<string, string>> = {
   },
   en: {
     app_language: 'Language',
+    settings_label: 'Settings',
+    settings_open: 'Open settings',
+    settings_close: 'Close settings',
+    settings_section_appearance: 'Appearance',
+    settings_section_language: 'Language',
     app_language_system: 'Follow system',
     app_language_zh_cn: 'Simplified Chinese',
     app_language_en: 'English',

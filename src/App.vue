@@ -86,21 +86,15 @@
             />
           </template>
           <template #actions>
-            <ThemeSwitcher
-              :model-value="themePreference"
-              @update:model-value="onThemePreferenceChange"
-            />
-            <label class="ui-locale-label" for="ui-locale-select">{{ t('app_language') }}</label>
-            <select
-              id="ui-locale-select"
-              class="ui-locale-select"
-              :value="localePreference"
-              @change="onLocalePreferenceChange"
+            <button
+              class="header-settings-button"
+              type="button"
+              :aria-label="t('settings_open')"
+              :title="t('settings_open')"
+              @click="isSettingsPanelOpen = true"
             >
-              <option value="system">{{ t('app_language_system') }}</option>
-              <option value="zh-CN">{{ t('app_language_zh_cn') }}</option>
-              <option value="en">{{ t('app_language_en') }}</option>
-            </select>
+              <IconTablerSettings class="header-settings-icon" />
+            </button>
           </template>
         </ContentHeader>
 
@@ -148,6 +142,35 @@
       </section>
     </template>
   </DesktopLayout>
+
+  <SettingsPanel
+    :open="isSettingsPanelOpen"
+    :title="t('settings_label')"
+    @close="isSettingsPanelOpen = false"
+  >
+    <section class="settings-section">
+      <p class="settings-section-label">{{ t('settings_section_appearance') }}</p>
+      <ThemeSwitcher
+        :model-value="themePreference"
+        @update:model-value="onThemePreferenceChange"
+      />
+    </section>
+
+    <section class="settings-section">
+      <p class="settings-section-label">{{ t('settings_section_language') }}</p>
+      <label class="ui-locale-label" for="ui-locale-select">{{ t('app_language') }}</label>
+      <select
+        id="ui-locale-select"
+        class="ui-locale-select"
+        :value="localePreference"
+        @change="onLocalePreferenceChange"
+      >
+        <option value="system">{{ t('app_language_system') }}</option>
+        <option value="zh-CN">{{ t('app_language_zh_cn') }}</option>
+        <option value="en">{{ t('app_language_en') }}</option>
+      </select>
+    </section>
+  </SettingsPanel>
 </template>
 
 <script setup lang="ts">
@@ -160,8 +183,10 @@ import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
 import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
+import SettingsPanel from './components/ui/SettingsPanel.vue'
 import ThemeSwitcher from './components/ui/ThemeSwitcher.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
+import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import IconTablerExternalLink from './components/icons/IconTablerExternalLink.vue'
 import { useDesktopState } from './composables/useDesktopState'
@@ -265,6 +290,7 @@ const newThreadCwd = ref('')
 const isSidebarCollapsed = ref(loadSidebarCollapsed())
 const sidebarSearchQuery = ref('')
 const isSidebarSearchVisible = ref(false)
+const isSettingsPanelOpen = ref(false)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
 
 const routeThreadId = computed(() => {
@@ -777,6 +803,32 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
   background: var(--surface-elevated);
   color: var(--text-default);
   box-shadow: var(--shadow-soft);
+}
+
+.header-settings-button {
+  @apply inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-soft);
+}
+
+.header-settings-button:hover {
+  background: var(--surface-hover);
+  color: var(--text-default);
+}
+
+.header-settings-icon {
+  @apply h-4 w-4;
+}
+
+.settings-section {
+  @apply flex flex-col gap-3;
+}
+
+.settings-section-label {
+  @apply m-0 text-[11px] font-semibold uppercase tracking-[0.22em];
+  color: var(--text-muted);
 }
 
 </style>
