@@ -19,9 +19,14 @@
             </UiButton>
           </DialogClose>
         </header>
-        <div class="settings-panel-body">
-          <slot />
-        </div>
+        <ScrollAreaRoot class="settings-panel-scroll">
+          <ScrollAreaViewport class="settings-panel-body">
+            <slot />
+          </ScrollAreaViewport>
+          <ScrollAreaScrollbar class="settings-panel-scrollbar" orientation="vertical">
+            <ScrollAreaThumb class="settings-panel-scrollbar-thumb" />
+          </ScrollAreaScrollbar>
+        </ScrollAreaRoot>
       </DialogContent>
     </DialogPortal>
   </DialogRoot>
@@ -35,6 +40,10 @@ import {
   DialogPortal,
   DialogRoot,
   DialogTitle,
+  ScrollAreaRoot,
+  ScrollAreaScrollbar,
+  ScrollAreaThumb,
+  ScrollAreaViewport,
 } from 'radix-vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
@@ -100,6 +109,19 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel-body {
-  @apply flex flex-col gap-6 pt-5;
+  @apply flex h-full flex-col gap-6 pt-5 pr-4;
+}
+
+.settings-panel-scroll {
+  @apply mt-1 h-[calc(100%-5.5rem)];
+}
+
+.settings-panel-scrollbar {
+  @apply flex w-2.5 touch-none select-none p-0.5;
+}
+
+.settings-panel-scrollbar-thumb {
+  @apply relative flex-1 rounded-full;
+  background: color-mix(in srgb, var(--border-strong) 88%, transparent);
 }
 </style>

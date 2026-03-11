@@ -150,29 +150,63 @@
     @update:open="isSettingsPanelOpen = $event"
     @close="isSettingsPanelOpen = false"
   >
-    <section class="settings-section">
-      <p class="settings-section-label">{{ t('settings_section_appearance') }}</p>
-      <ThemeSwitcher
-        :model-value="themePreference"
-        @update:model-value="onThemePreferenceChange"
-      />
-    </section>
+    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['appearance', 'behavior', 'language']">
+      <AccordionItem class="settings-section" value="appearance">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_appearance') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <ThemeSwitcher
+            :model-value="themePreference"
+            @update:model-value="onThemePreferenceChange"
+          />
+        </AccordionContent>
+      </AccordionItem>
 
-    <section class="settings-section">
-      <p class="settings-section-label">{{ t('settings_section_language') }}</p>
-      <label class="ui-locale-label">{{ t('app_language') }}</label>
-      <UiSelect
-        :model-value="localePreference"
-        :options="localeOptions"
-        @update:model-value="onLocalePreferenceChange"
-      />
-    </section>
+      <AccordionItem class="settings-section" value="behavior">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_behavior') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <UiSwitch
+            :model-value="isAutoRefreshEnabled"
+            :label="t('settings_auto_refresh_label')"
+            :description="t('settings_auto_refresh_description')"
+            @update:model-value="onAutoRefreshSwitchChange"
+          />
+        </AccordionContent>
+      </AccordionItem>
+
+      <AccordionItem class="settings-section" value="language">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_language') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <label class="ui-locale-label">{{ t('app_language') }}</label>
+          <UiSelect
+            :model-value="localePreference"
+            :options="localeOptions"
+            @update:model-value="onLocalePreferenceChange"
+          />
+        </AccordionContent>
+      </AccordionItem>
+    </AccordionRoot>
   </SettingsPanel>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { AccordionContent, AccordionHeader, AccordionItem, AccordionRoot, AccordionTrigger } from 'radix-vue'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
 import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
@@ -184,7 +218,9 @@ import SettingsPanel from './components/ui/SettingsPanel.vue'
 import ThemeSwitcher from './components/ui/ThemeSwitcher.vue'
 import UiButton from './components/ui/UiButton.vue'
 import UiSelect from './components/ui/UiSelect.vue'
+import UiSwitch from './components/ui/UiSwitch.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
+import IconTablerChevronDown from './components/icons/IconTablerChevronDown.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import IconTablerExternalLink from './components/icons/IconTablerExternalLink.vue'
@@ -483,6 +519,12 @@ function onThemePreferenceChange(value: ThemePreference): void {
 
 function onToggleAutoRefreshTimer(): void {
   toggleAutoRefreshTimer()
+}
+
+function onAutoRefreshSwitchChange(value: boolean): void {
+  if (value !== isAutoRefreshEnabled.value) {
+    toggleAutoRefreshTimer()
+  }
 }
 
 function setSidebarCollapsed(nextValue: boolean): void {
@@ -816,12 +858,35 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .settings-section {
-  @apply flex flex-col gap-3;
+  @apply rounded-2xl border px-4 py-2;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
 }
 
 .settings-section-label {
   @apply m-0 text-[11px] font-semibold uppercase tracking-[0.22em];
   color: var(--text-muted);
+}
+
+.settings-accordion {
+  @apply flex flex-col gap-3;
+}
+
+.settings-section-trigger {
+  @apply flex w-full items-center justify-between gap-3 py-2 text-left outline-none;
+}
+
+.settings-section-chevron {
+  @apply h-4 w-4 shrink-0 transition-transform duration-200;
+  color: var(--text-muted);
+}
+
+.settings-section-trigger[data-state='open'] .settings-section-chevron {
+  transform: rotate(180deg);
+}
+
+.settings-section-content {
+  @apply flex flex-col gap-3 pb-3;
 }
 
 </style>

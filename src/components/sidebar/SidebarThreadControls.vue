@@ -1,40 +1,44 @@
 <template>
   <div class="sidebar-thread-controls">
-    <button
-      class="sidebar-thread-controls-button"
-      type="button"
-      :aria-label="isSidebarCollapsed ? t('sidebar_expand') : t('sidebar_collapse')"
-      :title="isSidebarCollapsed ? t('sidebar_expand') : t('sidebar_collapse')"
-      @click="$emit('toggle-sidebar')"
-    >
-      <IconTablerLayoutSidebarFilled v-if="isSidebarCollapsed" class="sidebar-thread-controls-icon" />
-      <IconTablerLayoutSidebar v-else class="sidebar-thread-controls-icon" />
-    </button>
+    <UiTooltip :content="isSidebarCollapsed ? t('sidebar_expand') : t('sidebar_collapse')">
+      <button
+        class="sidebar-thread-controls-button"
+        type="button"
+        :aria-label="isSidebarCollapsed ? t('sidebar_expand') : t('sidebar_collapse')"
+        :title="isSidebarCollapsed ? t('sidebar_expand') : t('sidebar_collapse')"
+        @click="$emit('toggle-sidebar')"
+      >
+        <IconTablerLayoutSidebarFilled v-if="isSidebarCollapsed" class="sidebar-thread-controls-icon" />
+        <IconTablerLayoutSidebar v-else class="sidebar-thread-controls-icon" />
+      </button>
+    </UiTooltip>
 
-    <button
-      v-if="showAutoRefreshButton !== false"
-      class="sidebar-thread-controls-button"
-      type="button"
-      :aria-pressed="isAutoRefreshEnabled"
-      :aria-label="autoRefreshButtonLabel"
-      :title="autoRefreshButtonLabel"
-      @click="$emit('toggle-auto-refresh')"
-    >
-      <IconTablerRefresh class="sidebar-thread-controls-icon" />
-    </button>
+    <UiTooltip v-if="showAutoRefreshButton !== false" :content="autoRefreshButtonLabel">
+      <button
+        class="sidebar-thread-controls-button"
+        type="button"
+        :aria-pressed="isAutoRefreshEnabled"
+        :aria-label="autoRefreshButtonLabel"
+        :title="autoRefreshButtonLabel"
+        @click="$emit('toggle-auto-refresh')"
+      >
+        <IconTablerRefresh class="sidebar-thread-controls-icon" />
+      </button>
+    </UiTooltip>
 
     <slot />
 
-    <button
-      v-if="showNewThreadButton"
-      class="sidebar-thread-controls-button"
-      type="button"
-      :aria-label="t('sidebar_start_new_thread')"
-      :title="t('sidebar_start_new_thread')"
-      @click="$emit('start-new-thread')"
-    >
-      <IconTablerFilePencil class="sidebar-thread-controls-icon" />
-    </button>
+    <UiTooltip v-if="showNewThreadButton" :content="t('sidebar_start_new_thread')">
+      <button
+        class="sidebar-thread-controls-button"
+        type="button"
+        :aria-label="t('sidebar_start_new_thread')"
+        :title="t('sidebar_start_new_thread')"
+        @click="$emit('start-new-thread')"
+      >
+        <IconTablerFilePencil class="sidebar-thread-controls-icon" />
+      </button>
+    </UiTooltip>
   </div>
 </template>
 
@@ -44,6 +48,7 @@ import IconTablerLayoutSidebar from '../icons/IconTablerLayoutSidebar.vue'
 import IconTablerLayoutSidebarFilled from '../icons/IconTablerLayoutSidebarFilled.vue'
 import IconTablerRefresh from '../icons/IconTablerRefresh.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
+import UiTooltip from '../ui/UiTooltip.vue'
 
 const { t } = useUiI18n()
 
