@@ -86,6 +86,10 @@
             />
           </template>
           <template #actions>
+            <ThemeSwitcher
+              :model-value="themePreference"
+              @update:model-value="onThemePreferenceChange"
+            />
             <label class="ui-locale-label" for="ui-locale-select">{{ t('app_language') }}</label>
             <select
               id="ui-locale-select"
@@ -156,15 +160,18 @@ import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
 import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
+import ThemeSwitcher from './components/ui/ThemeSwitcher.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import IconTablerExternalLink from './components/icons/IconTablerExternalLink.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
+import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
 import type { ReasoningEffort, ThreadScrollState } from './types/codex'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const { localePreference, setLocalePreference, t } = useUiI18n()
+const { themePreference, setThemePreference } = useUiTheme()
 const OPENCLAW_GATEWAY_PORT_STORAGE_KEY = 'anyclaw.openclaw.gateway.port.v1'
 const OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY = 'anyclaw.openclaw.controlui.port.v1'
 const DEFAULT_OPENCLAW_GATEWAY_PORT = '18789'
@@ -442,6 +449,10 @@ function onLocalePreferenceChange(event: Event): void {
   }
 }
 
+function onThemePreferenceChange(value: ThemePreference): void {
+  setThemePreference(value)
+}
+
 function onToggleAutoRefreshTimer(): void {
   toggleAutoRefreshTimer()
 }
@@ -609,6 +620,9 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 
 .sidebar-root {
   @apply min-h-full py-4 px-2 flex flex-col gap-2 select-none;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-base) 86%, transparent), transparent 18%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 38%);
 }
 
 .sidebar-root input,
@@ -617,7 +631,10 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .content-root {
-  @apply h-full min-h-0 w-full flex flex-col overflow-y-hidden overflow-x-visible bg-white;
+  @apply h-full min-h-0 w-full flex flex-col overflow-y-hidden overflow-x-visible;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-primary) 10%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent), var(--surface-base));
 }
 
 .sidebar-thread-controls-host {
@@ -625,11 +642,17 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .sidebar-search-toggle {
-  @apply h-6.75 w-6.75 rounded-md border border-transparent bg-transparent text-zinc-600 flex items-center justify-center transition hover:border-zinc-200 hover:bg-zinc-50;
+  @apply h-6.75 w-6.75 rounded-md border flex items-center justify-center transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-soft);
 }
 
 .sidebar-search-toggle[aria-pressed='true'] {
-  @apply border-zinc-300 bg-zinc-100 text-zinc-700;
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--surface-elevated));
+  color: var(--text-default);
 }
 
 .sidebar-search-toggle-icon {
@@ -637,19 +660,33 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .sidebar-search-bar {
-  @apply flex items-center gap-1.5 mx-2 px-2 py-1 rounded-md border border-zinc-200 bg-white transition-colors focus-within:border-zinc-400;
+  @apply flex items-center gap-1.5 mx-2 px-2 py-1 rounded-md border transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-soft);
 }
 
 .sidebar-search-bar-icon {
-  @apply w-3.5 h-3.5 text-zinc-400 shrink-0;
+  @apply w-3.5 h-3.5 shrink-0;
+  color: var(--text-muted);
 }
 
 .sidebar-search-input {
-  @apply flex-1 min-w-0 bg-transparent text-sm text-zinc-800 placeholder-zinc-400 outline-none border-none p-0;
+  @apply flex-1 min-w-0 bg-transparent text-sm outline-none border-none p-0;
+  color: var(--text-default);
+}
+
+.sidebar-search-input::placeholder {
+  color: var(--text-muted);
 }
 
 .sidebar-search-clear {
-  @apply w-4 h-4 rounded text-zinc-400 flex items-center justify-center transition hover:text-zinc-600;
+  @apply w-4 h-4 rounded flex items-center justify-center transition-colors duration-200;
+  color: var(--text-muted);
+}
+
+.sidebar-search-clear:hover {
+  color: var(--text-default);
 }
 
 .sidebar-search-clear-icon {
@@ -681,11 +718,14 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .new-thread-hero {
-  @apply m-0 text-[2.5rem] font-normal leading-[1.05] text-zinc-900;
+  @apply m-0 text-[2.5rem] font-black leading-[1.05] tracking-[-0.04em];
+  color: var(--text-default);
+  font-family: var(--font-display);
 }
 
 .new-thread-folder-dropdown {
-  @apply text-[2.5rem] text-zinc-500;
+  @apply text-[2.5rem];
+  color: var(--text-muted);
 }
 
 .new-thread-folder-dropdown :deep(.composer-dropdown-trigger) {
@@ -701,11 +741,21 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .new-thread-guide {
-  @apply mt-3 max-w-xl text-center text-sm leading-6 text-zinc-500;
+  @apply mt-3 max-w-xl text-center text-sm leading-6;
+  color: var(--text-muted);
 }
 
 .openclaw-dashboard-link {
-  @apply mt-auto mx-2 mb-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 transition no-underline hover:bg-orange-100 hover:border-orange-300;
+  @apply mt-auto mx-2 mb-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium border transition-colors duration-200 no-underline;
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--surface-elevated));
+  border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--border-strong));
+  box-shadow: var(--shadow-soft);
+}
+
+.openclaw-dashboard-link:hover {
+  background: color-mix(in srgb, var(--accent-primary) 14%, var(--surface-elevated));
+  border-color: color-mix(in srgb, var(--accent-primary) 38%, var(--border-strong));
 }
 
 .openclaw-dashboard-icon {
@@ -717,11 +767,16 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 }
 
 .ui-locale-label {
-  @apply text-xs text-zinc-500;
+  @apply text-xs;
+  color: var(--text-muted);
 }
 
 .ui-locale-select {
-  @apply h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs text-zinc-700;
+  @apply h-8 rounded-md border px-2 text-xs;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
+  box-shadow: var(--shadow-soft);
 }
 
 </style>

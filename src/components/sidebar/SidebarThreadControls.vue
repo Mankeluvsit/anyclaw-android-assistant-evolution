@@ -70,15 +70,27 @@ defineEmits<{
 }
 
 .sidebar-thread-controls-button {
-  @apply h-6.75 w-6.75 rounded-md border border-transparent bg-transparent text-zinc-600 flex items-center justify-center transition hover:border-zinc-200 hover:bg-zinc-50;
+  @apply h-6.75 w-6.75 rounded-md border flex items-center justify-center transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-soft);
+}
+
+.sidebar-thread-controls-button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text-default);
 }
 
 .sidebar-thread-controls-button[aria-pressed='true'] {
-  @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  border-color: color-mix(in srgb, var(--accent-success) 40%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent-success) 16%, var(--surface-elevated));
+  color: var(--accent-success);
 }
 
 .sidebar-thread-controls-button[aria-pressed='false'] {
-  @apply text-zinc-500;
+  color: var(--text-muted);
 }
 
 .sidebar-thread-controls-icon {

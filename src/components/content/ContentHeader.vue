@@ -20,11 +20,16 @@ defineProps<{
 @reference "tailwindcss";
 
 .content-header {
-  @apply relative z-10 w-full min-h-14 flex items-center gap-3 px-3 pt-4 pb-2 bg-white;
+  @apply relative z-10 w-full min-h-14 flex items-center gap-3 px-3 pt-4 pb-2;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 94%, transparent), transparent);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .content-title {
-  @apply m-0 min-w-0 flex-1 truncate text-sm font-medium leading-6 text-slate-900;
+  @apply m-0 min-w-0 flex-1 truncate text-sm font-semibold leading-6 tracking-[0.01em];
+  color: var(--text-default);
+  font-family: var(--font-display);
 }
 
 .content-actions {
