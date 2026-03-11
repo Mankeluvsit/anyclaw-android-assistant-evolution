@@ -1,10 +1,21 @@
 <template>
   <div class="desktop-layout" :style="layoutStyle">
-    <aside v-if="!isSidebarCollapsed" class="desktop-sidebar">
+    <button
+      v-if="!isSidebarCollapsed && isCompactViewport"
+      class="desktop-mobile-backdrop"
+      type="button"
+      aria-label="Close sidebar"
+      @click="$emit('collapse-sidebar')"
+    />
+    <aside
+      v-if="!isSidebarCollapsed"
+      class="desktop-sidebar"
+      :class="{ 'desktop-sidebar-compact': isCompactViewport }"
+    >
       <slot name="sidebar" />
     </aside>
     <button
-      v-if="!isSidebarCollapsed"
+      v-if="!isSidebarCollapsed && !isCompactViewport"
       class="desktop-resize-handle"
       type="button"
       aria-label="Resize sidebar"
@@ -22,11 +33,17 @@ import { computed, ref } from 'vue'
 const props = withDefaults(
   defineProps<{
     isSidebarCollapsed?: boolean
+    isCompactViewport?: boolean
   }>(),
   {
     isSidebarCollapsed: false,
+    isCompactViewport: false,
   },
 )
+
+defineEmits<{
+  'collapse-sidebar': []
+}>()
 
 const SIDEBAR_WIDTH_KEY = 'codex-web-local.sidebar-width.v1'
 const MIN_SIDEBAR_WIDTH = 260
@@ -103,6 +120,16 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
   border-right: 1px solid var(--border-subtle);
 }
 
+.desktop-sidebar-compact {
+  @apply fixed inset-y-0 left-0 z-[80] w-[min(88vw,22rem)] max-w-[22rem] border-r;
+  box-shadow: 24px 0 60px rgba(0, 0, 0, 0.32);
+}
+
+.desktop-mobile-backdrop {
+  @apply fixed inset-0 z-[70] border-0;
+  background: rgba(0, 0, 0, 0.48);
+}
+
 .desktop-resize-handle {
   @apply relative w-px cursor-col-resize transition-colors duration-200;
   background: var(--border-subtle);
@@ -120,5 +147,15 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
 .desktop-main {
   @apply min-h-0 overflow-y-hidden overflow-x-visible;
   background: var(--surface-base);
+}
+
+@media (max-width: 960px) {
+  .desktop-layout {
+    @apply block;
+  }
+
+  .desktop-main {
+    @apply h-screen;
+  }
 }
 </style>

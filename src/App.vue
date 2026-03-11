@@ -1,5 +1,9 @@
 <template>
-  <DesktopLayout :is-sidebar-collapsed="isSidebarCollapsed">
+  <DesktopLayout
+    :is-sidebar-collapsed="isSidebarCollapsed"
+    :is-compact-viewport="isCompactViewport"
+    @collapse-sidebar="setSidebarCollapsed(true)"
+  >
     <template #sidebar>
       <section class="sidebar-root">
         <SidebarThreadControls
@@ -180,6 +184,12 @@
             :description="t('settings_auto_refresh_description')"
             @update:model-value="onAutoRefreshSwitchChange"
           />
+          <UiSwitch
+            :model-value="settings.pressEnterToSend"
+            :label="t('settings_enter_to_send_label')"
+            :description="t('settings_enter_to_send_description')"
+            @update:model-value="onPressEnterToSendChange"
+          />
         </AccordionContent>
       </AccordionItem>
 
@@ -205,6 +215,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { AccordionContent, AccordionHeader, AccordionItem, AccordionRoot, AccordionTrigger } from 'radix-vue'
 import DesktopLayout from './components/layout/DesktopLayout.vue'
@@ -226,16 +237,19 @@ import IconTablerX from './components/icons/IconTablerX.vue'
 import IconTablerExternalLink from './components/icons/IconTablerExternalLink.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
+import { useUiSettings } from './composables/useUiSettings'
 import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
 import type { ReasoningEffort, ThreadScrollState } from './types/codex'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const { localePreference, setLocalePreference, t } = useUiI18n()
 const { themePreference, setThemePreference } = useUiTheme()
+const { settings, setPressEnterToSend } = useUiSettings()
 const OPENCLAW_GATEWAY_PORT_STORAGE_KEY = 'anyclaw.openclaw.gateway.port.v1'
 const OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY = 'anyclaw.openclaw.controlui.port.v1'
 const DEFAULT_OPENCLAW_GATEWAY_PORT = '18789'
 const DEFAULT_OPENCLAW_CONTROL_UI_PORT = '19001'
+const isCompactViewport = useMediaQuery('(max-width: 960px)')
 const localeOptions = computed(() => [
   { value: 'system', label: t('app_language_system') },
   { value: 'zh-CN', label: t('app_language_zh_cn') },
@@ -426,6 +440,9 @@ function onSidebarSearchKeydown(event: KeyboardEvent): void {
 function onSelectThread(threadId: string): void {
   if (!threadId) return
   if (route.name === 'thread' && routeThreadId.value === threadId) return
+  if (isCompactViewport.value) {
+    setSidebarCollapsed(true)
+  }
   void router.push({ name: 'thread', params: { threadId } })
 }
 
@@ -439,6 +456,9 @@ function onStartNewThread(projectName: string): void {
   if (projectCwd) {
     newThreadCwd.value = projectCwd
   }
+  if (isCompactViewport.value) {
+    setSidebarCollapsed(true)
+  }
   if (isHomeRoute.value) return
   void router.push({ name: 'home' })
 }
@@ -447,6 +467,9 @@ function onStartNewThreadFromToolbar(): void {
   const cwd = selectedThread.value?.cwd?.trim() ?? ''
   if (cwd) {
     newThreadCwd.value = cwd
+  }
+  if (isCompactViewport.value) {
+    setSidebarCollapsed(true)
   }
   if (isHomeRoute.value) return
   void router.push({ name: 'home' })
@@ -525,6 +548,10 @@ function onAutoRefreshSwitchChange(value: boolean): void {
   if (value !== isAutoRefreshEnabled.value) {
     toggleAutoRefreshTimer()
   }
+}
+
+function onPressEnterToSendChange(value: boolean): void {
+  setPressEnterToSend(value)
 }
 
 function setSidebarCollapsed(nextValue: boolean): void {
@@ -887,6 +914,48 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 
 .settings-section-content {
   @apply flex flex-col gap-3 pb-3;
+}
+
+@media (max-width: 960px) {
+  .sidebar-root {
+    @apply px-2 py-3;
+  }
+
+  .content-root {
+    @apply min-h-screen;
+  }
+
+  .content-body {
+    @apply gap-2 px-0 pb-[max(0.75rem,env(safe-area-inset-bottom))];
+  }
+
+  .content-grid {
+    @apply gap-2;
+  }
+
+  .new-thread-empty {
+    @apply min-h-0 items-start justify-end px-4 pt-6 text-left;
+  }
+
+  .new-thread-hero {
+    @apply text-[2rem];
+  }
+
+  .new-thread-folder-dropdown {
+    @apply text-[1.5rem];
+  }
+
+  .new-thread-folder-dropdown :deep(.composer-dropdown-trigger) {
+    @apply text-[1.5rem];
+  }
+
+  .new-thread-guide {
+    @apply mt-2 text-left;
+  }
+
+  .header-settings-button {
+    @apply h-10 w-10;
+  }
 }
 
 </style>

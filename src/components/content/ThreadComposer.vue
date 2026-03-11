@@ -1,13 +1,15 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit">
     <div class="thread-composer-shell">
-      <input
+      <textarea
+        ref="inputRef"
         v-model="draft"
         class="thread-composer-input"
-        type="text"
         :placeholder="placeholderText"
         :disabled="disabled || !activeThreadId || isTurnInProgress"
-        @keydown.enter.exact.prevent="onSubmit"
+        rows="1"
+        @keydown="onComposerKeydown"
+        @input="onDraftInput"
       />
 
       <div class="thread-composer-controls">
@@ -58,15 +60,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { ReasoningEffort } from '../../types/codex'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
 import UiTooltip from '../ui/UiTooltip.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
+import { useUiSettings } from '../../composables/useUiSettings'
 
 const { t } = useUiI18n()
+const { settings } = useUiSettings()
+const DRAFT_STORAGE_KEY = 'codex-web-local.thread-drafts.v1'
 
 const props = defineProps<{
   activeThreadId: string
@@ -86,6 +91,7 @@ const emit = defineEmits<{
 }>()
 
 const draft = ref('')
+const inputRef = ref<HTMLTextAreaElement | null>(null)
 const reasoningOptions = computed<Array<{ value: ReasoningEffort; label: string }>>(() => [
   { value: 'none', label: t('thinking_none') },
   { value: 'minimal', label: t('thinking_minimal') },
@@ -114,6 +120,8 @@ function onSubmit(): void {
   if (!text || !canSubmit.value) return
   emit('submit', text)
   draft.value = ''
+  persistDraft('')
+  syncTextareaHeight()
 }
 
 function onInterrupt(): void {
@@ -128,12 +136,70 @@ function onReasoningEffortSelect(value: string): void {
   emit('update:selected-reasoning-effort', value as ReasoningEffort)
 }
 
+function readStoredDrafts(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistDraft(value: string): void {
+  if (typeof window === 'undefined' || !props.activeThreadId) return
+  const nextDrafts = {
+    ...readStoredDrafts(),
+    [props.activeThreadId]: value,
+  }
+  if (!value) {
+    delete nextDrafts[props.activeThreadId]
+  }
+  window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(nextDrafts))
+}
+
+function syncTextareaHeight(): void {
+  nextTick(() => {
+    const element = inputRef.value
+    if (!element) return
+    element.style.height = '0px'
+    element.style.height = `${Math.min(element.scrollHeight, 220)}px`
+  })
+}
+
+function onDraftInput(): void {
+  persistDraft(draft.value)
+  syncTextareaHeight()
+}
+
+function onComposerKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  if (!settings.value.pressEnterToSend) return
+  event.preventDefault()
+  onSubmit()
+}
+
 watch(
   () => props.activeThreadId,
-  () => {
-    draft.value = ''
+  (threadId) => {
+    if (!threadId) {
+      draft.value = ''
+      syncTextareaHeight()
+      return
+    }
+    draft.value = readStoredDrafts()[threadId] ?? ''
+    syncTextareaHeight()
   },
+  { immediate: true },
 )
+
+watch(draft, () => {
+  syncTextareaHeight()
+})
 </script>
 
 <style scoped>
@@ -151,7 +217,9 @@ watch(
 }
 
 .thread-composer-input {
-  @apply w-full min-w-0 h-11 rounded-xl border-0 bg-transparent px-1 text-sm outline-none transition-colors duration-200;
+  @apply block w-full min-w-0 resize-none overflow-y-auto rounded-xl border-0 bg-transparent px-1 py-2 text-sm outline-none transition-colors duration-200;
+  min-height: 2.75rem;
+  max-height: 13.75rem;
   color: var(--text-default);
 }
 
@@ -165,7 +233,7 @@ watch(
 }
 
 .thread-composer-controls {
-  @apply mt-3 flex items-center gap-4;
+  @apply mt-3 flex flex-wrap items-center gap-3;
 }
 
 .thread-composer-control {
@@ -209,5 +277,19 @@ watch(
 
 .thread-composer-stop-icon {
   @apply h-5 w-5;
+}
+
+@media (max-width: 960px) {
+  .thread-composer {
+    @apply max-w-none px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))];
+  }
+
+  .thread-composer-shell {
+    @apply rounded-[1.25rem] p-2.5;
+  }
+
+  .thread-composer-controls {
+    @apply gap-2;
+  }
 }
 </style>
