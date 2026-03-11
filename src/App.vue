@@ -131,6 +131,7 @@
                   @update-scroll-state="onUpdateThreadScrollState"
                   @respond-server-request="onRespondServerRequest"
                   @copy-message="onCopyMessage"
+                  @resend-message="onResendMessage"
                   @delete-from-message="onDeleteFromMessage"
                   @branch-from-message="onBranchFromMessage" />
               </div>
@@ -154,7 +155,7 @@
     @update:open="isSettingsPanelOpen = $event"
     @close="isSettingsPanelOpen = false"
   >
-    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['appearance', 'behavior', 'language']">
+    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['appearance', 'behavior', 'language', 'diagnostics']">
       <AccordionItem class="settings-section" value="appearance">
         <AccordionHeader>
           <AccordionTrigger class="settings-section-trigger">
@@ -209,6 +210,41 @@
           />
         </AccordionContent>
       </AccordionItem>
+
+      <AccordionItem class="settings-section" value="diagnostics">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_diagnostics') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <div class="diagnostics-summary-grid">
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_active_thread') }}</p>
+              <p class="diagnostics-value">{{ selectedThreadId || t('diagnostics_none') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_model') }}</p>
+              <p class="diagnostics-value">{{ selectedModelId || t('diagnostics_none') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_reasoning') }}</p>
+              <p class="diagnostics-value">{{ selectedReasoningEffort || t('diagnostics_none') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_requests') }}</p>
+              <p class="diagnostics-value">{{ selectedThreadServerRequests.length }}</p>
+            </article>
+          </div>
+          <UiButton variant="surface" size="sm" class="diagnostics-refresh-button" @click="refreshDiagnostics">
+            {{ t('diagnostics_refresh') }}
+          </UiButton>
+          <p v-if="diagnosticsError" class="diagnostics-error">{{ diagnosticsError }}</p>
+          <ApiMethodsPanel :methods="rpcMethodCatalog" :is-loading="isDiagnosticsLoading" />
+          <ApiMethodsPanel :methods="rpcNotificationCatalog" :is-loading="isDiagnosticsLoading" />
+        </AccordionContent>
+      </AccordionItem>
     </AccordionRoot>
   </SettingsPanel>
 </template>
@@ -223,6 +259,7 @@ import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
 import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
+import ApiMethodsPanel from './components/content/ApiMethodsPanel.vue'
 import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
 import SettingsPanel from './components/ui/SettingsPanel.vue'
@@ -235,6 +272,7 @@ import IconTablerChevronDown from './components/icons/IconTablerChevronDown.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import IconTablerExternalLink from './components/icons/IconTablerExternalLink.vue'
+import { getMethodCatalog, getNotificationCatalog } from './api/codexGateway'
 import { useDesktopState } from './composables/useDesktopState'
 import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
 import { useUiSettings } from './composables/useUiSettings'
@@ -346,6 +384,10 @@ const sidebarSearchQuery = ref('')
 const isSidebarSearchVisible = ref(false)
 const isSettingsPanelOpen = ref(false)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
+const rpcMethodCatalog = ref<string[]>([])
+const rpcNotificationCatalog = ref<string[]>([])
+const diagnosticsError = ref('')
+const isDiagnosticsLoading = ref(false)
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -409,6 +451,7 @@ const newThreadFolderOptions = computed(() => {
 onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
   void initialize()
+  void refreshDiagnostics()
 })
 
 onUnmounted(() => {
@@ -500,6 +543,12 @@ function onCopyMessage(messageId: string): void {
   if (!row || row.text.trim().length === 0) return
   if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
   void navigator.clipboard.writeText(row.text)
+}
+
+function onResendMessage(messageId: string): void {
+  const row = filteredMessages.value.find((message) => message.id === messageId)
+  if (!row || row.text.trim().length === 0) return
+  void sendMessageToSelectedThread(row.text)
 }
 
 function onDeleteFromMessage(messageId: string): void {
@@ -618,6 +667,23 @@ async function initialize(): Promise<void> {
   hasInitialized.value = true
   await syncThreadSelectionWithRoute()
   startPolling()
+}
+
+async function refreshDiagnostics(): Promise<void> {
+  isDiagnosticsLoading.value = true
+  diagnosticsError.value = ''
+  try {
+    const [methods, notifications] = await Promise.all([
+      getMethodCatalog(),
+      getNotificationCatalog(),
+    ])
+    rpcMethodCatalog.value = methods
+    rpcNotificationCatalog.value = notifications
+  } catch (error) {
+    diagnosticsError.value = error instanceof Error ? error.message : t('diagnostics_load_failed')
+  } finally {
+    isDiagnosticsLoading.value = false
+  }
 }
 
 async function syncThreadSelectionWithRoute(): Promise<void> {
@@ -914,6 +980,35 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 
 .settings-section-content {
   @apply flex flex-col gap-3 pb-3;
+}
+
+.diagnostics-summary-grid {
+  @apply grid gap-2 sm:grid-cols-2;
+}
+
+.diagnostics-card {
+  @apply rounded-2xl border px-3 py-3;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+}
+
+.diagnostics-label {
+  @apply m-0 text-[11px] font-semibold uppercase tracking-[0.18em];
+  color: var(--text-muted);
+}
+
+.diagnostics-value {
+  @apply mt-2 mb-0 break-all text-sm;
+  color: var(--text-default);
+}
+
+.diagnostics-refresh-button {
+  @apply w-fit;
+}
+
+.diagnostics-error {
+  @apply m-0 text-sm;
+  color: #f87171;
 }
 
 @media (max-width: 960px) {

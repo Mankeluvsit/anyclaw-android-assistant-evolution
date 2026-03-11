@@ -109,11 +109,40 @@
                 v-if="message.text.length > 0"
                 class="message-card"
                 :data-role="message.role"
-                @contextmenu.prevent="openMessageActionMenu(message.id)"
-                @touchstart="onMessageTouchStart(message.id)"
-                @touchend="onMessageTouchEnd"
-                @touchcancel="onMessageTouchEnd"
               >
+                <div
+                  v-if="message.messageType !== 'worked' && (message.role === 'assistant' || message.role === 'user')"
+                  class="message-actions-inline"
+                >
+                  <UiDropdownMenu :align="message.role === 'user' ? 'start' : 'end'">
+                    <template #trigger>
+                      <button class="message-action-trigger" type="button" :aria-label="t('message_action_more')">
+                        <IconTablerDots class="message-action-trigger-icon" />
+                      </button>
+                    </template>
+                    <UiDropdownMenuItem @select="onCopyMessage(message.id)">
+                      {{ t('message_action_copy') }}
+                    </UiDropdownMenuItem>
+                    <UiDropdownMenuItem
+                      v-if="message.role === 'user'"
+                      @select="onResendMessage(message.id)"
+                    >
+                      {{ t('message_action_resend') }}
+                    </UiDropdownMenuItem>
+                    <UiDropdownMenuItem
+                      :disabled="typeof message.turnIndex !== 'number'"
+                      @select="onDeleteFromMessage(message.id)"
+                    >
+                      {{ t('message_action_delete') }}
+                    </UiDropdownMenuItem>
+                    <UiDropdownMenuItem
+                      :disabled="typeof message.turnIndex !== 'number'"
+                      @select="onBranchFromMessage(message.id)"
+                    >
+                      {{ t('message_action_branch') }}
+                    </UiDropdownMenuItem>
+                  </UiDropdownMenu>
+                </div>
                 <div v-if="message.messageType === 'worked'" class="worked-separator" aria-live="polite">
                   <span class="worked-separator-line" aria-hidden="true" />
                   <p class="worked-separator-text">{{ message.text }}</p>
@@ -122,50 +151,25 @@
                 <p v-else class="message-text">
                   <template v-for="(segment, index) in parseInlineSegments(message.text)" :key="`seg-${index}`">
                     <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
-                    <a v-else-if="segment.kind === 'link'" class="message-link" :href="segment.url" target="_blank" rel="noopener noreferrer">
+                    <button
+                      v-else-if="segment.kind === 'link'"
+                      type="button"
+                      class="message-link"
+                      @click="openExternalLink(segment.url)"
+                    >
                       {{ segment.label }}
-                    </a>
-                    <a v-else-if="segment.kind === 'file'" class="message-file-link" href="#" @click.prevent>
+                    </button>
+                    <button
+                      v-else-if="segment.kind === 'file'"
+                      type="button"
+                      class="message-file-link"
+                      @click="copyFileReference(segment.value)"
+                    >
                       {{ segment.displayName }}
-                    </a>
+                    </button>
                     <code v-else class="message-inline-code">{{ segment.value }}</code>
                   </template>
                 </p>
-                <div
-                  v-if="message.id.length > 0 && messageActionMenuId === message.id && message.messageType !== 'worked' && (message.role === 'assistant' || message.role === 'user')"
-                  class="message-action-menu"
-                >
-                  <button
-                    class="message-action-button"
-                    type="button"
-                    @click="onCopyMessage(message.id)"
-                  >
-                    {{ t('message_action_copy') }}
-                  </button>
-                  <button
-                    class="message-action-button"
-                    type="button"
-                    :disabled="typeof message.turnIndex !== 'number'"
-                    @click="onDeleteFromMessage(message.id)"
-                  >
-                    {{ t('message_action_delete') }}
-                  </button>
-                  <button
-                    class="message-action-button"
-                    type="button"
-                    :disabled="typeof message.turnIndex !== 'number'"
-                    @click="onBranchFromMessage(message.id)"
-                  >
-                    {{ t('message_action_branch') }}
-                  </button>
-                  <button
-                    class="message-action-button"
-                    type="button"
-                    @click="closeMessageActionMenu"
-                  >
-                    {{ t('message_action_close') }}
-                  </button>
-                </div>
               </article>
             </article>
           </div>
@@ -202,10 +206,13 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
+import IconTablerDots from '../icons/IconTablerDots.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
+import UiDropdownMenu from '../ui/UiDropdownMenu.vue'
+import UiDropdownMenuItem from '../ui/UiDropdownMenuItem.vue'
 
 const { t } = useUiI18n()
 
@@ -222,6 +229,7 @@ const emit = defineEmits<{
   updateScrollState: [payload: { threadId: string; state: ThreadScrollState }]
   respondServerRequest: [payload: { id: number; result?: unknown; error?: { code?: number; message: string } }]
   copyMessage: [messageId: string]
+  resendMessage: [messageId: string]
   deleteFromMessage: [messageId: string]
   branchFromMessage: [messageId: string]
 }>()
@@ -229,11 +237,9 @@ const emit = defineEmits<{
 const conversationListRef = ref<HTMLElement | null>(null)
 const bottomAnchorRef = ref<HTMLElement | null>(null)
 const modalImageUrl = ref('')
-const messageActionMenuId = ref<string | null>(null)
 const toolQuestionAnswers = ref<Record<string, string>>({})
 const toolQuestionOtherAnswers = ref<Record<string, string>>({})
 const BOTTOM_THRESHOLD_PX = 16
-const MESSAGE_ACTION_LONG_PRESS_MS = 450
 type InlineSegment =
   | { kind: 'text'; value: string }
   | { kind: 'code'; value: string }
@@ -243,7 +249,6 @@ type InlineSegment =
 let scrollRestoreFrame = 0
 let bottomLockFrame = 0
 let bottomLockFramesLeft = 0
-let messageLongPressTimer: ReturnType<typeof setTimeout> | 0 = 0
 const trackedPendingImages = new WeakSet<HTMLImageElement>()
 
 type ParsedToolQuestion = {
@@ -720,7 +725,6 @@ watch(
 function onConversationScroll(): void {
   const container = conversationListRef.value
   if (!container || props.isLoading) return
-  closeMessageActionMenu()
   emitScrollState(container)
 }
 
@@ -732,60 +736,31 @@ function closeImageModal(): void {
   modalImageUrl.value = ''
 }
 
-function openMessageActionMenu(messageId: string): void {
-  if (!messageId || messageId.length === 0) return
-  messageActionMenuId.value = messageId
-}
-
-function closeMessageActionMenu(): void {
-  messageActionMenuId.value = null
-}
-
-function clearMessageLongPressTimer(): void {
-  if (messageLongPressTimer) {
-    clearTimeout(messageLongPressTimer)
-    messageLongPressTimer = 0
-  }
-}
-
-function onMessageTouchStart(messageId: string): void {
-  if (!messageId || messageId.length === 0) return
-  clearMessageLongPressTimer()
-  messageLongPressTimer = setTimeout(() => {
-    messageLongPressTimer = 0
-    openMessageActionMenu(messageId)
-  }, MESSAGE_ACTION_LONG_PRESS_MS)
-}
-
-function onMessageTouchEnd(): void {
-  clearMessageLongPressTimer()
-}
-
 function onCopyMessage(messageId: string): void {
   emit('copyMessage', messageId)
-  closeMessageActionMenu()
+}
+
+function onResendMessage(messageId: string): void {
+  emit('resendMessage', messageId)
 }
 
 function onDeleteFromMessage(messageId: string): void {
   emit('deleteFromMessage', messageId)
-  closeMessageActionMenu()
 }
 
 function onBranchFromMessage(messageId: string): void {
   emit('branchFromMessage', messageId)
-  closeMessageActionMenu()
 }
 
-function onWindowPointerDown(event: PointerEvent): void {
-  const target = event.target
-  if (!(target instanceof Element)) return
-  if (target.closest('.message-action-menu')) return
-  closeMessageActionMenu()
+function openExternalLink(url: string): void {
+  if (typeof window === 'undefined') return
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-onMounted(() => {
-  window.addEventListener('pointerdown', onWindowPointerDown)
-})
+function copyFileReference(value: string): void {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
+  void navigator.clipboard.writeText(value)
+}
 
 onBeforeUnmount(() => {
   if (scrollRestoreFrame) {
@@ -794,8 +769,6 @@ onBeforeUnmount(() => {
   if (bottomLockFrame) {
     cancelAnimationFrame(bottomLockFrame)
   }
-  clearMessageLongPressTimer()
-  window.removeEventListener('pointerdown', onWindowPointerDown)
 })
 </script>
 
@@ -979,7 +952,7 @@ onBeforeUnmount(() => {
 }
 
 .message-card {
-  @apply max-w-[min(76ch,100%)] px-0 py-0 bg-transparent border-none rounded-none;
+  @apply relative max-w-[min(76ch,100%)] px-0 py-0 bg-transparent border-none rounded-none;
 }
 
 .message-text {
@@ -987,22 +960,29 @@ onBeforeUnmount(() => {
   color: var(--text-default);
 }
 
-.message-action-menu {
-  @apply mt-2 flex flex-wrap gap-2 rounded-lg border px-2 py-2;
-  border-color: var(--border-subtle);
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-soft);
+.message-actions-inline {
+  @apply absolute top-2 right-2 z-10;
 }
 
-.message-action-button {
-  @apply rounded-md border px-2.5 py-1 text-xs transition-colors duration-200;
+.message-card[data-role='assistant'] .message-actions-inline,
+.message-card[data-role='system'] .message-actions-inline {
+  @apply top-0 right-0;
+}
+
+.message-action-trigger {
+  @apply inline-flex h-8 w-8 items-center justify-center rounded-full border outline-none transition-colors duration-200;
   border-color: var(--border-subtle);
-  background: var(--surface-elevated);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  color: var(--text-muted);
+}
+
+.message-action-trigger:hover {
+  background: var(--surface-hover);
   color: var(--text-default);
 }
 
-.message-action-button:disabled {
-  @apply cursor-not-allowed opacity-50;
+.message-action-trigger-icon {
+  @apply h-4 w-4;
 }
 
 .message-inline-code {
@@ -1013,12 +993,12 @@ onBeforeUnmount(() => {
 }
 
 .message-link {
-  @apply text-sm leading-relaxed underline underline-offset-2;
+  @apply inline border-0 bg-transparent p-0 text-sm leading-relaxed underline underline-offset-2;
   color: var(--accent-primary);
 }
 
 .message-file-link {
-  @apply text-sm leading-relaxed no-underline hover:underline underline-offset-2;
+  @apply inline border-0 bg-transparent p-0 text-sm leading-relaxed no-underline hover:underline underline-offset-2;
   color: var(--accent-primary);
 }
 
