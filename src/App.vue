@@ -148,6 +148,7 @@
               <ThreadComposer :active-thread-id="composerThreadContextId" :disabled="isSendingMessage"
                 :models="availableModelIds" :selected-model="selectedModelId"
                 :selected-reasoning-effort="selectedReasoningEffort" :is-turn-in-progress="false"
+                :draft-seed="composerDraftSeed"
                 :is-interrupting-turn="false" @submit="onSubmitThreadMessage"
                 @update:selected-model="onSelectModel" @update:selected-reasoning-effort="onSelectReasoningEffort" />
             </div>
@@ -276,12 +277,22 @@
           </AccordionTrigger>
         </AccordionHeader>
         <AccordionContent class="settings-section-content">
+          <input
+            ref="threadImportInputRef"
+            class="thread-import-input"
+            type="file"
+            accept=".json,.md,.markdown,.txt,application/json,text/markdown,text/plain"
+            @change="onThreadImportChange"
+          />
           <div class="workflow-actions">
             <UiButton variant="surface" size="sm" @click="exportCurrentThread('json')">
               {{ t('thread_export_json') }}
             </UiButton>
             <UiButton variant="surface" size="sm" @click="exportCurrentThread('markdown')">
               {{ t('thread_export_markdown') }}
+            </UiButton>
+            <UiButton variant="surface" size="sm" @click="openThreadImportPicker">
+              {{ t('thread_import') }}
             </UiButton>
             <UiButton
               v-if="canUseNativeShare"
@@ -291,6 +302,45 @@
             >
               {{ t('thread_share') }}
             </UiButton>
+          </div>
+          <p v-if="workflowStatusMessage" class="workflow-status-message">{{ workflowStatusMessage }}</p>
+          <div class="saved-view-editor">
+            <label class="ui-locale-label" for="saved-view-name">{{ t('saved_view_name_label') }}</label>
+            <div class="saved-view-editor-row">
+              <input
+                id="saved-view-name"
+                v-model="savedViewNameDraft"
+                class="saved-view-input"
+                type="text"
+                :placeholder="t('saved_view_name_placeholder')"
+                @keydown.enter.prevent="saveCurrentView"
+              />
+              <UiButton variant="surface" size="sm" @click="saveCurrentView">
+                {{ t('saved_view_save') }}
+              </UiButton>
+            </div>
+          </div>
+          <div v-if="savedViews.length > 0" class="saved-view-list">
+            <article
+              v-for="view in savedViews"
+              :key="view.id"
+              class="saved-view-card"
+            >
+              <div class="saved-view-copy">
+                <p class="saved-view-name">{{ view.name }}</p>
+                <p class="saved-view-meta">
+                  {{ formatSavedViewMeta(view) }}
+                </p>
+              </div>
+              <div class="saved-view-actions">
+                <UiButton variant="ghost" size="sm" @click="applySavedView(view.id)">
+                  {{ t('saved_view_apply') }}
+                </UiButton>
+                <UiButton variant="ghost" size="sm" @click="removeSavedView(view.id)">
+                  {{ t('saved_view_remove') }}
+                </UiButton>
+              </div>
+            </article>
           </div>
         </AccordionContent>
       </AccordionItem>
@@ -421,6 +471,7 @@ import { getMethodCatalog, getNotificationCatalog } from './api/codexGateway'
 import { useDesktopState } from './composables/useDesktopState'
 import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
 import { useProjectPreferences } from './composables/useProjectPreferences'
+import { useSavedViews, type SavedView } from './composables/useSavedViews'
 import { useUiSettings } from './composables/useUiSettings'
 import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
 import type { ComposerImageAttachment, ReasoningEffort, ThreadScrollState, UiMessage } from './types/codex'
@@ -429,6 +480,7 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const { localePreference, setLocalePreference, t } = useUiI18n()
 const { themePreference, setThemePreference } = useUiTheme()
 const { getProjectPreference, setProjectPreference } = useProjectPreferences()
+const { savedViews, addSavedView, removeSavedView } = useSavedViews()
 const { settings, setPressEnterToSend } = useUiSettings()
 const OPENCLAW_GATEWAY_PORT_STORAGE_KEY = 'anyclaw.openclaw.gateway.port.v1'
 const OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY = 'anyclaw.openclaw.controlui.port.v1'
@@ -537,6 +589,7 @@ const threadSearchQuery = ref('')
 const isThreadSearchVisible = ref(false)
 const isSettingsPanelOpen = ref(false)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
+const threadImportInputRef = ref<HTMLInputElement | null>(null)
 const rpcMethodCatalog = ref<string[]>([])
 const rpcNotificationCatalog = ref<string[]>([])
 const diagnosticsError = ref('')
@@ -544,6 +597,8 @@ const isDiagnosticsLoading = ref(false)
 const editingMessageId = ref('')
 const composerDraftSeed = ref<{ key: string; text: string } | null>(null)
 const projectInstructionsDraft = ref('')
+const savedViewNameDraft = ref('')
+const workflowStatusMessage = ref('')
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -826,6 +881,10 @@ function onPressEnterToSendChange(value: boolean): void {
   setPressEnterToSend(value)
 }
 
+function openThreadImportPicker(): void {
+  threadImportInputRef.value?.click()
+}
+
 function onProjectDefaultModelChange(value: string): void {
   if (!activeProjectName.value) return
   setProjectPreference(activeProjectName.value, { defaultModel: value })
@@ -854,6 +913,57 @@ function applyProjectDefaults(projectName: string): void {
 
 function applyActiveProjectDefaults(): void {
   applyProjectDefaults(activeProjectName.value)
+}
+
+function saveCurrentView(): void {
+  const name = savedViewNameDraft.value.trim()
+  if (!name) {
+    workflowStatusMessage.value = t('saved_view_name_required')
+    return
+  }
+
+  addSavedView({
+    name,
+    sidebarQuery: sidebarSearchQuery.value,
+    threadQuery: threadSearchQuery.value,
+    projectName: activeProjectName.value,
+    cwd: newThreadCwd.value,
+    modelId: selectedModelId.value,
+    reasoning: selectedReasoningEffort.value,
+  })
+  savedViewNameDraft.value = ''
+  workflowStatusMessage.value = t('saved_view_saved')
+}
+
+function applySavedView(id: string): void {
+  const view = savedViews.value.find((item) => item.id === id)
+  if (!view) return
+  sidebarSearchQuery.value = view.sidebarQuery
+  isSidebarSearchVisible.value = view.sidebarQuery.length > 0
+  threadSearchQuery.value = view.threadQuery
+  isThreadSearchVisible.value = view.threadQuery.length > 0
+  if (view.cwd) {
+    newThreadCwd.value = view.cwd
+  }
+  if (view.projectName) {
+    applyProjectDefaults(view.projectName)
+  }
+  if (view.modelId) {
+    setSelectedModelId(view.modelId)
+  }
+  if (view.reasoning) {
+    setSelectedReasoningEffort(view.reasoning)
+  }
+  workflowStatusMessage.value = t('saved_view_applied')
+}
+
+function formatSavedViewMeta(view: SavedView): string {
+  const parts = [
+    view.projectName || t('diagnostics_none'),
+    view.modelId || t('project_default_model_none'),
+    view.reasoning || t('project_default_reasoning_none'),
+  ]
+  return parts.join(' · ')
 }
 
 function setSidebarCollapsed(nextValue: boolean): void {
@@ -932,22 +1042,95 @@ function exportCurrentThread(format: 'json' | 'markdown'): void {
   const thread = selectedThread.value
   if (!thread) return
 
-  const fileBase = `${thread.projectName}-${thread.id}`.replace(/[^a-z0-9-_]+/giu, '-')
+  const { blob, fileName } = buildThreadExport(thread.projectName, thread.id, thread.title, format)
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+async function shareCurrentThread(): Promise<void> {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || !selectedThread.value) return
+  const file = buildThreadExport(
+    selectedThread.value.projectName,
+    selectedThread.value.id,
+    selectedThread.value.title,
+    'markdown',
+  )
+  const shareFile = new File([file.blob], file.fileName, { type: 'text/markdown' })
+  const summary = filteredMessages.value.map((message) => `${message.role.toUpperCase()}: ${message.text}`).join('\n\n').slice(0, 4000)
+
+  if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [shareFile] })) {
+    await navigator.share({
+      title: selectedThread.value.title,
+      text: summary,
+      files: [shareFile],
+    })
+    workflowStatusMessage.value = t('thread_share_ready')
+    return
+  }
+
+  await navigator.share({
+    title: selectedThread.value.title,
+    text: summary,
+  })
+  workflowStatusMessage.value = t('thread_share_ready')
+}
+
+async function onThreadImportChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (!file) return
+
+  try {
+    const raw = await file.text()
+    const imported = parseImportedThread(raw, file.name)
+    if (!imported) {
+      workflowStatusMessage.value = t('thread_import_invalid')
+      return
+    }
+
+    clearEditingMessage()
+    newThreadCwd.value = imported.cwd || newThreadCwd.value
+    composerDraftSeed.value = {
+      key: `import:${file.name}:${Date.now()}`,
+      text: imported.prompt,
+    }
+    if (!isHomeRoute.value) {
+      await router.replace({ name: 'home' })
+    }
+    workflowStatusMessage.value = t('thread_import_ready')
+  } catch (error) {
+    workflowStatusMessage.value = error instanceof Error ? error.message : t('thread_import_invalid')
+  } finally {
+    if (input) input.value = ''
+  }
+}
+
+function buildThreadExport(
+  projectName: string,
+  threadId: string,
+  threadTitle: string,
+  format: 'json' | 'markdown',
+): { blob: Blob; fileName: string } {
+  const fileBase = `${projectName}-${threadId}`.replace(/[^a-z0-9-_]+/giu, '-')
   const payload =
     format === 'json'
       ? JSON.stringify(
           {
-            thread,
+            thread: selectedThread.value,
             messages: filteredMessages.value,
           },
           null,
           2,
         )
       : [
-          `# ${thread.title}`,
+          `# ${threadTitle}`,
           '',
-          `Project: ${thread.projectName}`,
-          `Thread: ${thread.id}`,
+          `Project: ${projectName}`,
+          `Thread: ${threadId}`,
           '',
           ...filteredMessages.value.flatMap((message) => [
             `## ${message.role}`,
@@ -958,26 +1141,43 @@ function exportCurrentThread(format: 'json' | 'markdown'): void {
           ]),
         ].join('\n')
 
-  const blob = new Blob([payload], { type: format === 'json' ? 'application/json' : 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `${fileBase}.${format === 'json' ? 'json' : 'md'}`
-  anchor.click()
-  URL.revokeObjectURL(url)
+  return {
+    blob: new Blob([payload], { type: format === 'json' ? 'application/json' : 'text/markdown' }),
+    fileName: `${fileBase}.${format === 'json' ? 'json' : 'md'}`,
+  }
 }
 
-async function shareCurrentThread(): Promise<void> {
-  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || !selectedThread.value) return
-  const summary = filteredMessages.value
-    .map((message) => `${message.role.toUpperCase()}: ${message.text}`)
-    .join('\n\n')
-    .slice(0, 4000)
+function parseImportedThread(raw: string, fileName: string): { prompt: string; cwd: string } | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
 
-  await navigator.share({
-    title: selectedThread.value.title,
-    text: summary,
-  })
+  if (fileName.toLowerCase().endsWith('.json')) {
+    const parsed = JSON.parse(trimmed) as { thread?: { projectName?: string; cwd?: string; title?: string }; messages?: Array<{ role?: string; text?: string }> }
+    const messages = Array.isArray(parsed.messages) ? parsed.messages : []
+    const transcript = messages
+      .filter((message) => typeof message.text === 'string' && message.text.trim().length > 0)
+      .map((message) => `${(message.role ?? 'message').toUpperCase()}: ${message.text?.trim() ?? ''}`)
+      .join('\n\n')
+    if (!transcript) return null
+
+    return {
+      cwd: parsed.thread?.cwd?.trim() ?? '',
+      prompt: [
+        `Imported thread snapshot: ${parsed.thread?.title?.trim() || fileName}`,
+        '',
+        transcript,
+      ].join('\n'),
+    }
+  }
+
+  return {
+    cwd: '',
+    prompt: [
+      `Imported thread snapshot: ${fileName}`,
+      '',
+      trimmed,
+    ].join('\n'),
+  }
 }
 
 function formatDiagnosticsTime(value: string): string {
@@ -1480,6 +1680,66 @@ async function submitFirstMessageForNewThread(
 }
 
 .workflow-actions {
+  @apply flex flex-wrap gap-2;
+}
+
+.workflow-status-message {
+  @apply m-0 text-sm leading-6;
+  color: var(--text-muted);
+}
+
+.thread-import-input {
+  @apply hidden;
+}
+
+.saved-view-editor {
+  @apply flex flex-col gap-2;
+}
+
+.saved-view-editor-row {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.saved-view-input {
+  @apply min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
+}
+
+.saved-view-input::placeholder {
+  color: var(--text-muted);
+}
+
+.saved-view-input:focus-visible {
+  border-color: color-mix(in srgb, var(--accent-primary) 44%, var(--border-strong));
+}
+
+.saved-view-list {
+  @apply flex flex-col gap-2;
+}
+
+.saved-view-card {
+  @apply flex flex-wrap items-start justify-between gap-3 rounded-2xl border px-3 py-3;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+}
+
+.saved-view-copy {
+  @apply min-w-0 flex-1;
+}
+
+.saved-view-name {
+  @apply m-0 text-sm font-semibold;
+  color: var(--text-default);
+}
+
+.saved-view-meta {
+  @apply mt-1 mb-0 text-xs leading-5;
+  color: var(--text-muted);
+}
+
+.saved-view-actions {
   @apply flex flex-wrap gap-2;
 }
 
