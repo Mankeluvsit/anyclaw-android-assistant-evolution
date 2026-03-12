@@ -17,6 +17,7 @@ import {
   type RpcNotification,
 } from '../api/codexGateway'
 import type {
+  ComposerImageAttachment,
   UiConnectionHealth,
   UiDiagnosticEvent,
   ReasoningEffort,
@@ -1757,10 +1758,10 @@ export function useDesktopState() {
     }
   }
 
-  async function sendMessageToSelectedThread(text: string): Promise<void> {
+  async function sendMessageToSelectedThread(text: string, attachments: ComposerImageAttachment[] = []): Promise<void> {
     const threadId = selectedThreadId.value
     const nextText = text.trim()
-    if (!threadId || !nextText) return
+    if (!threadId || (!nextText && attachments.length === 0)) return
 
     isSendingMessage.value = true
     error.value = ''
@@ -1774,7 +1775,7 @@ export function useDesktopState() {
     setThreadInProgress(threadId, true)
 
     try {
-      await startTurnForThread(threadId, nextText)
+      await startTurnForThread(threadId, nextText, attachments)
       pushDiagnosticEvent({
         scope: 'thread',
         threadId,
@@ -1799,11 +1800,15 @@ export function useDesktopState() {
     }
   }
 
-  async function sendMessageToNewThread(text: string, cwd: string): Promise<string> {
+  async function sendMessageToNewThread(
+    text: string,
+    cwd: string,
+    attachments: ComposerImageAttachment[] = [],
+  ): Promise<string> {
     const nextText = text.trim()
     const targetCwd = cwd.trim()
     const selectedModel = selectedModelId.value.trim()
-    if (!nextText) return ''
+    if (!nextText && attachments.length === 0) return ''
 
     isSendingMessage.value = true
     error.value = ''
@@ -1827,7 +1832,7 @@ export function useDesktopState() {
       setTurnErrorForThread(threadId, null)
       setThreadInProgress(threadId, true)
 
-      await startTurnForThread(threadId, nextText)
+      await startTurnForThread(threadId, nextText, attachments)
       pushDiagnosticEvent({
         scope: 'thread',
         threadId,
@@ -1857,7 +1862,11 @@ export function useDesktopState() {
     }
   }
 
-  async function startTurnForThread(threadId: string, nextText: string): Promise<void> {
+  async function startTurnForThread(
+    threadId: string,
+    nextText: string,
+    attachments: ComposerImageAttachment[] = [],
+  ): Promise<void> {
     const modelId = selectedModelId.value.trim()
     const reasoningEffort = selectedReasoningEffort.value
 
@@ -1871,6 +1880,7 @@ export function useDesktopState() {
         nextText,
         modelId || undefined,
         reasoningEffort || undefined,
+        attachments,
       )
 
       resumedThreadById.value = {

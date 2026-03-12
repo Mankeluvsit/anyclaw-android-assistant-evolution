@@ -82,6 +82,12 @@ export type UiMessage = {
   isUnhandled?: boolean
 }
 
+export type ComposerImageAttachment = {
+  id: string
+  name: string
+  url: string
+}
+
 export type UiServerRequest = {
   id: number
   method: string

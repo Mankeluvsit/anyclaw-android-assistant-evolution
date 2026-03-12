@@ -19,7 +19,47 @@
         @input="onDraftInput"
       />
 
+      <div v-if="attachments.length > 0" class="thread-composer-attachments">
+        <article
+          v-for="attachment in attachments"
+          :key="attachment.id"
+          class="thread-composer-attachment"
+        >
+          <img class="thread-composer-attachment-preview" :src="attachment.url" :alt="attachment.name" />
+          <div class="thread-composer-attachment-meta">
+            <span class="thread-composer-attachment-name">{{ attachment.name }}</span>
+          </div>
+          <button
+            class="thread-composer-attachment-remove"
+            type="button"
+            :aria-label="t('composer_remove_attachment')"
+            @click="removeAttachment(attachment.id)"
+          >
+            <IconTablerX class="thread-composer-attachment-remove-icon" />
+          </button>
+        </article>
+      </div>
+
       <div class="thread-composer-controls">
+        <input
+          ref="fileInputRef"
+          class="thread-composer-file-input"
+          type="file"
+          accept="image/*"
+          multiple
+          @change="onAttachmentInput"
+        />
+        <button
+          class="thread-composer-attach"
+          type="button"
+          :aria-label="t('composer_add_attachment')"
+          :title="t('composer_add_attachment')"
+          :disabled="disabled || !activeThreadId || isTurnInProgress"
+          @click="openAttachmentPicker"
+        >
+          <IconTablerPaperclip class="thread-composer-attach-icon" />
+        </button>
+
         <ComposerDropdown
           class="thread-composer-control"
           :model-value="selectedModel"
@@ -68,8 +108,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { ReasoningEffort } from '../../types/codex'
+import type { ComposerImageAttachment, ReasoningEffort } from '../../types/codex'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
+import IconTablerPaperclip from '../icons/IconTablerPaperclip.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 import UiTooltip from '../ui/UiTooltip.vue'
@@ -94,7 +135,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  submit: [text: string]
+  submit: [payload: { text: string; attachments: ComposerImageAttachment[] }]
   interrupt: []
   cancelEdit: []
   'update:selected-model': [modelId: string]
@@ -103,6 +144,8 @@ const emit = defineEmits<{
 
 const draft = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const attachments = ref<ComposerImageAttachment[]>([])
 const reasoningOptions = computed<Array<{ value: ReasoningEffort; label: string }>>(() => [
   { value: 'none', label: t('thinking_none') },
   { value: 'minimal', label: t('thinking_minimal') },
@@ -119,7 +162,7 @@ const canSubmit = computed(() => {
   if (props.disabled) return false
   if (!props.activeThreadId) return false
   if (props.isTurnInProgress) return false
-  return draft.value.trim().length > 0
+  return draft.value.trim().length > 0 || attachments.value.length > 0
 })
 
 const placeholderText = computed(() =>
@@ -128,9 +171,11 @@ const placeholderText = computed(() =>
 
 function onSubmit(): void {
   const text = draft.value.trim()
-  if (!text || !canSubmit.value) return
-  emit('submit', text)
+  if (!canSubmit.value) return
+  emit('submit', { text, attachments: attachments.value })
   draft.value = ''
+  revokeAttachmentUrls()
+  attachments.value = []
   persistDraft('')
   syncTextareaHeight()
 }
@@ -141,6 +186,10 @@ function onInterrupt(): void {
 
 function onCancelEdit(): void {
   emit('cancelEdit')
+}
+
+function openAttachmentPicker(): void {
+  fileInputRef.value?.click()
 }
 
 function onModelSelect(value: string): void {
@@ -198,6 +247,45 @@ function onComposerKeydown(event: KeyboardEvent): void {
   onSubmit()
 }
 
+async function onAttachmentInput(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement | null
+  const files = Array.from(input?.files ?? [])
+  if (files.length === 0) return
+
+  const nextAttachments = await Promise.all(
+    files
+      .filter((file) => file.type.startsWith('image/'))
+      .slice(0, Math.max(0, 4 - attachments.value.length))
+      .map(async (file) => ({
+        id: `${file.name}:${file.size}:${file.lastModified}:${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name,
+        url: await readFileAsDataUrl(file),
+      })),
+  )
+
+  attachments.value = [...attachments.value, ...nextAttachments]
+  if (input) {
+    input.value = ''
+  }
+}
+
+function removeAttachment(attachmentId: string): void {
+  attachments.value = attachments.value.filter((attachment) => attachment.id !== attachmentId)
+}
+
+function revokeAttachmentUrls(): void {
+  // Data URLs do not need explicit cleanup.
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
+    reader.readAsDataURL(file)
+  })
+}
+
 watch(
   () => props.activeThreadId,
   (threadId) => {
@@ -230,6 +318,17 @@ watch(
 watch(draft, () => {
   syncTextareaHeight()
 })
+
+watch(
+  () => props.activeThreadId,
+  () => {
+    revokeAttachmentUrls()
+    attachments.value = []
+    if (fileInputRef.value) {
+      fileInputRef.value.value = ''
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -279,6 +378,43 @@ watch(draft, () => {
   color: var(--text-default);
 }
 
+.thread-composer-attachments {
+  @apply mt-3 flex flex-wrap gap-2;
+}
+
+.thread-composer-attachment {
+  @apply relative flex items-center gap-2 rounded-xl border px-2 py-2;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 86%, transparent);
+}
+
+.thread-composer-attachment-preview {
+  @apply h-12 w-12 rounded-lg object-cover;
+}
+
+.thread-composer-attachment-meta {
+  @apply min-w-0 pr-6;
+}
+
+.thread-composer-attachment-name {
+  @apply block truncate text-xs font-medium;
+  color: var(--text-default);
+}
+
+.thread-composer-attachment-remove {
+  @apply absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border-0 transition-colors duration-200;
+  background: color-mix(in srgb, var(--surface-base) 80%, transparent);
+  color: var(--text-muted);
+}
+
+.thread-composer-attachment-remove:hover {
+  color: var(--text-default);
+}
+
+.thread-composer-attachment-remove-icon {
+  @apply h-3.5 w-3.5;
+}
+
 .thread-composer-input:focus {
   @apply ring-0;
 }
@@ -290,6 +426,28 @@ watch(draft, () => {
 
 .thread-composer-controls {
   @apply mt-3 flex flex-wrap items-center gap-3;
+}
+
+.thread-composer-file-input {
+  @apply hidden;
+}
+
+.thread-composer-attach {
+  @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 transition-colors duration-200 disabled:cursor-not-allowed;
+  background: var(--surface-hover);
+  color: var(--text-default);
+}
+
+.thread-composer-attach:hover {
+  background: color-mix(in srgb, var(--surface-hover) 82%, white);
+}
+
+.thread-composer-attach:disabled {
+  color: var(--text-muted);
+}
+
+.thread-composer-attach-icon {
+  @apply h-4.5 w-4.5;
 }
 
 .thread-composer-control {

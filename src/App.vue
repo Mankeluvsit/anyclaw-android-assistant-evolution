@@ -326,8 +326,7 @@ import { useDesktopState } from './composables/useDesktopState'
 import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
 import { useUiSettings } from './composables/useUiSettings'
 import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
-import type { ReasoningEffort, ThreadScrollState } from './types/codex'
-import type { UiMessage } from './types/codex'
+import type { ComposerImageAttachment, ReasoningEffort, ThreadScrollState, UiMessage } from './types/codex'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const { localePreference, setLocalePreference, t } = useUiI18n()
@@ -698,9 +697,10 @@ function onWindowKeyDown(event: KeyboardEvent): void {
   setSidebarCollapsed(!isSidebarCollapsed.value)
 }
 
-function onSubmitThreadMessage(text: string): void {
+function onSubmitThreadMessage(payload: { text: string; attachments: ComposerImageAttachment[] }): void {
+  const { text, attachments } = payload
   if (isHomeRoute.value) {
-    void submitFirstMessageForNewThread(text)
+    void submitFirstMessageForNewThread(text, attachments)
     return
   }
   void (async () => {
@@ -709,7 +709,7 @@ function onSubmitThreadMessage(text: string): void {
       if (editingId) {
         await deleteFromMessage(editingId)
       }
-      await sendMessageToSelectedThread(text)
+      await sendMessageToSelectedThread(text, attachments)
       clearEditingMessage()
     } catch {
       // Error is already reflected in state.
@@ -891,9 +891,12 @@ watch(
   { immediate: true },
 )
 
-async function submitFirstMessageForNewThread(text: string): Promise<void> {
+async function submitFirstMessageForNewThread(
+  text: string,
+  attachments: ComposerImageAttachment[],
+): Promise<void> {
   try {
-    const threadId = await sendMessageToNewThread(text, newThreadCwd.value)
+    const threadId = await sendMessageToNewThread(text, newThreadCwd.value, attachments)
     if (!threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
   } catch {

@@ -16,7 +16,7 @@ import type {
 } from './appServerDtos'
 import { normalizeCodexApiError } from './codexErrors'
 import { normalizeThreadGroupsV2, normalizeThreadMessagesV2 } from './normalizers/v2'
-import type { UiMessage, UiProjectGroup } from '../types/codex'
+import type { ComposerImageAttachment, UiMessage, UiProjectGroup } from '../types/codex'
 
 type CurrentModelConfig = {
   model: string
@@ -183,11 +183,21 @@ export async function startThreadTurn(
   text: string,
   model?: string,
   effort?: ReasoningEffort,
+  attachments: ComposerImageAttachment[] = [],
 ): Promise<void> {
   try {
+    const input: Array<Record<string, unknown>> = []
+    if (text.trim().length > 0) {
+      input.push({ type: 'text', text })
+    }
+    for (const attachment of attachments) {
+      if (!attachment.url) continue
+      input.push({ type: 'image', url: attachment.url })
+    }
+
     const params: Record<string, unknown> = {
       threadId,
-      input: [{ type: 'text', text }],
+      input,
     }
     if (typeof model === 'string' && model.length > 0) {
       params.model = model
