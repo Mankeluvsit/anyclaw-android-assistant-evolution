@@ -91,6 +91,17 @@
           </template>
           <template #actions>
             <UiButton
+              v-if="!isHomeRoute"
+              class="header-search-button"
+              size="icon"
+              variant="surface"
+              :aria-label="t('thread_search_label')"
+              :title="t('thread_search_label')"
+              @click="toggleThreadSearch"
+            >
+              <IconTablerSearch class="header-settings-icon" />
+            </UiButton>
+            <UiButton
               class="header-settings-button"
               size="icon"
               variant="surface"
@@ -102,6 +113,26 @@
             </UiButton>
           </template>
         </ContentHeader>
+
+        <div v-if="!isHomeRoute && isThreadSearchVisible" class="thread-search-bar">
+          <IconTablerSearch class="thread-search-bar-icon" />
+          <input
+            v-model="threadSearchQuery"
+            class="thread-search-input"
+            type="text"
+            :placeholder="t('thread_search_placeholder')"
+          />
+          <span class="thread-search-meta">{{ visibleMessages.length }}</span>
+          <button
+            v-if="threadSearchQuery.length > 0"
+            class="thread-search-clear"
+            type="button"
+            :aria-label="t('sidebar_clear_search')"
+            @click="threadSearchQuery = ''"
+          >
+            <IconTablerX class="sidebar-search-clear-icon" />
+          </button>
+        </div>
 
         <section class="content-body">
           <template v-if="isHomeRoute">
@@ -124,7 +155,13 @@
           <template v-else>
             <div class="content-grid">
               <div class="content-thread">
-                <ThreadConversation :messages="filteredMessages" :is-loading="isLoadingMessages"
+                <div
+                  v-if="threadSearchQuery.trim().length > 0 && visibleMessages.length === 0"
+                  class="thread-search-empty"
+                >
+                  {{ t('thread_search_no_match') }}
+                </div>
+                <ThreadConversation :messages="visibleMessages" :is-loading="isLoadingMessages"
                   :active-thread-id="composerThreadContextId" :scroll-state="selectedThreadScrollState"
                   :live-overlay="liveOverlay"
                   :pending-requests="selectedThreadServerRequests"
@@ -196,6 +233,65 @@
             :description="t('settings_enter_to_send_description')"
             @update:model-value="onPressEnterToSendChange"
           />
+        </AccordionContent>
+      </AccordionItem>
+
+      <AccordionItem class="settings-section" value="project">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_project') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <p class="diagnostics-label">{{ activeProjectName || t('diagnostics_none') }}</p>
+          <UiSelect
+            :model-value="projectPreference.defaultModel"
+            :options="projectModelOptions"
+            @update:model-value="onProjectDefaultModelChange"
+          />
+          <UiSelect
+            :model-value="projectPreference.defaultReasoning"
+            :options="projectReasoningOptions"
+            @update:model-value="onProjectDefaultReasoningChange"
+          />
+          <label class="ui-locale-label">{{ t('project_instructions_label') }}</label>
+          <textarea
+            v-model="projectInstructionsDraft"
+            class="project-instructions-input"
+            :placeholder="t('project_instructions_placeholder')"
+            @change="onProjectInstructionsChange"
+          />
+          <UiButton variant="surface" size="sm" @click="applyActiveProjectDefaults">
+            {{ t('project_apply_defaults') }}
+          </UiButton>
+        </AccordionContent>
+      </AccordionItem>
+
+      <AccordionItem class="settings-section" value="workflow">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_workflow') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <div class="workflow-actions">
+            <UiButton variant="surface" size="sm" @click="exportCurrentThread('json')">
+              {{ t('thread_export_json') }}
+            </UiButton>
+            <UiButton variant="surface" size="sm" @click="exportCurrentThread('markdown')">
+              {{ t('thread_export_markdown') }}
+            </UiButton>
+            <UiButton
+              v-if="canUseNativeShare"
+              variant="surface"
+              size="sm"
+              @click="shareCurrentThread"
+            >
+              {{ t('thread_share') }}
+            </UiButton>
+          </div>
         </AccordionContent>
       </AccordionItem>
 
@@ -324,6 +420,7 @@ import IconTablerExternalLink from './components/icons/IconTablerExternalLink.vu
 import { getMethodCatalog, getNotificationCatalog } from './api/codexGateway'
 import { useDesktopState } from './composables/useDesktopState'
 import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
+import { useProjectPreferences } from './composables/useProjectPreferences'
 import { useUiSettings } from './composables/useUiSettings'
 import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
 import type { ComposerImageAttachment, ReasoningEffort, ThreadScrollState, UiMessage } from './types/codex'
@@ -331,6 +428,7 @@ import type { ComposerImageAttachment, ReasoningEffort, ThreadScrollState, UiMes
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const { localePreference, setLocalePreference, t } = useUiI18n()
 const { themePreference, setThemePreference } = useUiTheme()
+const { getProjectPreference, setProjectPreference } = useProjectPreferences()
 const { settings, setPressEnterToSend } = useUiSettings()
 const OPENCLAW_GATEWAY_PORT_STORAGE_KEY = 'anyclaw.openclaw.gateway.port.v1'
 const OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY = 'anyclaw.openclaw.controlui.port.v1'
@@ -435,6 +533,8 @@ const newThreadCwd = ref('')
 const isSidebarCollapsed = ref(loadSidebarCollapsed())
 const sidebarSearchQuery = ref('')
 const isSidebarSearchVisible = ref(false)
+const threadSearchQuery = ref('')
+const isThreadSearchVisible = ref(false)
 const isSettingsPanelOpen = ref(false)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
 const rpcMethodCatalog = ref<string[]>([])
@@ -443,6 +543,7 @@ const diagnosticsError = ref('')
 const isDiagnosticsLoading = ref(false)
 const editingMessageId = ref('')
 const composerDraftSeed = ref<{ key: string; text: string } | null>(null)
+const projectInstructionsDraft = ref('')
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -477,16 +578,46 @@ const filteredMessages = computed(() =>
     return true
   }),
 )
+const visibleMessages = computed(() => {
+  const query = threadSearchQuery.value.trim().toLowerCase()
+  if (!query) return filteredMessages.value
+  return filteredMessages.value.filter((message) => {
+    const text = `${message.text} ${message.rawPayload ?? ''}`.toLowerCase()
+    return text.includes(query)
+  })
+})
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
 const editingMessageLabel = computed(() => (editingMessageId.value ? t('composer_editing_message') : ''))
 const formattedLastNotificationAt = computed(() => formatDiagnosticsTime(connectionHealth.value.lastNotificationAtIso))
 const formattedLastSyncAt = computed(() => formatDiagnosticsTime(connectionHealth.value.lastSyncAtIso))
+const activeProjectName = computed(() => {
+  if (isHomeRoute.value) {
+    const selected = newThreadFolderOptions.value.find((option) => option.value === newThreadCwd.value)
+    return selected?.projectName || ''
+  }
+  return selectedThread.value?.projectName ?? ''
+})
+const projectPreference = computed(() => getProjectPreference(activeProjectName.value))
+const projectModelOptions = computed(() => [
+  { value: '', label: t('project_default_model_none') },
+  ...availableModelIds.value.map((modelId) => ({ value: modelId, label: modelId })),
+])
+const projectReasoningOptions = computed(() => [
+  { value: '', label: t('project_default_reasoning_none') },
+  { value: 'none', label: t('thinking_none') },
+  { value: 'minimal', label: t('thinking_minimal') },
+  { value: 'low', label: t('thinking_low') },
+  { value: 'medium', label: t('thinking_medium') },
+  { value: 'high', label: t('thinking_high') },
+  { value: 'xhigh', label: t('thinking_xhigh') },
+])
+const canUseNativeShare = computed(() => typeof navigator !== 'undefined' && typeof navigator.share === 'function')
 const DEFAULT_WORKSPACE_NAME = 'codex'
 
 const newThreadFolderOptions = computed(() => {
-  const options: Array<{ value: string; label: string }> = []
+  const options: Array<{ value: string; label: string; projectName: string }> = []
   const seenCwds = new Set<string>()
 
   for (const group of projectGroups.value) {
@@ -496,11 +627,12 @@ const newThreadFolderOptions = computed(() => {
     options.push({
       value: cwd,
       label: projectDisplayNameById.value[group.projectName] ?? group.projectName,
+      projectName: group.projectName,
     })
   }
 
   if (options.length === 0) {
-    options.push({ value: DEFAULT_WORKSPACE_NAME, label: DEFAULT_WORKSPACE_NAME })
+    options.push({ value: DEFAULT_WORKSPACE_NAME, label: DEFAULT_WORKSPACE_NAME, projectName: DEFAULT_WORKSPACE_NAME })
   }
 
   return options
@@ -531,6 +663,13 @@ function clearSidebarSearch(): void {
   sidebarSearchInputRef.value?.focus()
 }
 
+function toggleThreadSearch(): void {
+  isThreadSearchVisible.value = !isThreadSearchVisible.value
+  if (!isThreadSearchVisible.value) {
+    threadSearchQuery.value = ''
+  }
+}
+
 function onSidebarSearchKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     isSidebarSearchVisible.value = false
@@ -559,6 +698,7 @@ function onStartNewThread(projectName: string): void {
   if (projectCwd) {
     newThreadCwd.value = projectCwd
   }
+  applyProjectDefaults(projectName)
   if (isCompactViewport.value) {
     setSidebarCollapsed(true)
   }
@@ -569,8 +709,12 @@ function onStartNewThread(projectName: string): void {
 function onStartNewThreadFromToolbar(): void {
   clearEditingMessage()
   const cwd = selectedThread.value?.cwd?.trim() ?? ''
+  const projectName = selectedThread.value?.projectName ?? ''
   if (cwd) {
     newThreadCwd.value = cwd
+  }
+  if (projectName) {
+    applyProjectDefaults(projectName)
   }
   if (isCompactViewport.value) {
     setSidebarCollapsed(true)
@@ -682,6 +826,36 @@ function onPressEnterToSendChange(value: boolean): void {
   setPressEnterToSend(value)
 }
 
+function onProjectDefaultModelChange(value: string): void {
+  if (!activeProjectName.value) return
+  setProjectPreference(activeProjectName.value, { defaultModel: value })
+}
+
+function onProjectDefaultReasoningChange(value: string): void {
+  if (!activeProjectName.value) return
+  setProjectPreference(activeProjectName.value, { defaultReasoning: value as ReasoningEffort | '' })
+}
+
+function onProjectInstructionsChange(): void {
+  if (!activeProjectName.value) return
+  setProjectPreference(activeProjectName.value, { instructions: projectInstructionsDraft.value })
+}
+
+function applyProjectDefaults(projectName: string): void {
+  if (!projectName) return
+  const preference = getProjectPreference(projectName)
+  if (preference.defaultModel && availableModelIds.value.includes(preference.defaultModel)) {
+    setSelectedModelId(preference.defaultModel)
+  }
+  if (preference.defaultReasoning) {
+    setSelectedReasoningEffort(preference.defaultReasoning)
+  }
+}
+
+function applyActiveProjectDefaults(): void {
+  applyProjectDefaults(activeProjectName.value)
+}
+
 function setSidebarCollapsed(nextValue: boolean): void {
   if (isSidebarCollapsed.value === nextValue) return
   isSidebarCollapsed.value = nextValue
@@ -719,6 +893,10 @@ function onSubmitThreadMessage(payload: { text: string; attachments: ComposerIma
 
 function onSelectNewThreadFolder(cwd: string): void {
   newThreadCwd.value = cwd.trim()
+  const nextProject = newThreadFolderOptions.value.find((option) => option.value === newThreadCwd.value)?.projectName ?? ''
+  if (nextProject) {
+    applyProjectDefaults(nextProject)
+  }
 }
 
 function onSelectModel(modelId: string): void {
@@ -748,6 +926,58 @@ function saveSidebarCollapsed(value: boolean): void {
 function clearEditingMessage(): void {
   editingMessageId.value = ''
   composerDraftSeed.value = null
+}
+
+function exportCurrentThread(format: 'json' | 'markdown'): void {
+  const thread = selectedThread.value
+  if (!thread) return
+
+  const fileBase = `${thread.projectName}-${thread.id}`.replace(/[^a-z0-9-_]+/giu, '-')
+  const payload =
+    format === 'json'
+      ? JSON.stringify(
+          {
+            thread,
+            messages: filteredMessages.value,
+          },
+          null,
+          2,
+        )
+      : [
+          `# ${thread.title}`,
+          '',
+          `Project: ${thread.projectName}`,
+          `Thread: ${thread.id}`,
+          '',
+          ...filteredMessages.value.flatMap((message) => [
+            `## ${message.role}`,
+            '',
+            message.text || '',
+            ...(message.images?.length ? ['', ...message.images.map((image) => `![attachment](${image})`)] : []),
+            '',
+          ]),
+        ].join('\n')
+
+  const blob = new Blob([payload], { type: format === 'json' ? 'application/json' : 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${fileBase}.${format === 'json' ? 'json' : 'md'}`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+async function shareCurrentThread(): Promise<void> {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || !selectedThread.value) return
+  const summary = filteredMessages.value
+    .map((message) => `${message.role.toUpperCase()}: ${message.text}`)
+    .join('\n\n')
+    .slice(0, 4000)
+
+  await navigator.share({
+    title: selectedThread.value.title,
+    text: summary,
+  })
 }
 
 function formatDiagnosticsTime(value: string): string {
@@ -891,6 +1121,14 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => activeProjectName.value,
+  (projectName) => {
+    projectInstructionsDraft.value = projectName ? getProjectPreference(projectName).instructions : ''
+  },
+  { immediate: true },
+)
+
 async function submitFirstMessageForNewThread(
   text: string,
   attachments: ComposerImageAttachment[],
@@ -991,6 +1229,49 @@ async function submitFirstMessageForNewThread(
   @apply flex-1 min-h-0 w-full flex flex-col gap-3 pt-1 pb-4 overflow-y-hidden overflow-x-visible;
 }
 
+.thread-search-bar {
+  @apply mx-3 flex items-center gap-2 rounded-2xl border px-3 py-2;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+  box-shadow: var(--shadow-soft);
+}
+
+.thread-search-bar-icon {
+  @apply h-4 w-4 shrink-0;
+  color: var(--text-muted);
+}
+
+.thread-search-input {
+  @apply min-w-0 flex-1 border-none bg-transparent p-0 text-sm outline-none;
+  color: var(--text-default);
+}
+
+.thread-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.thread-search-meta {
+  @apply text-[11px] uppercase tracking-[0.14em];
+  color: var(--text-muted);
+}
+
+.thread-search-clear {
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors duration-200;
+  color: var(--text-muted);
+}
+
+.thread-search-clear:hover {
+  color: var(--text-default);
+  background: color-mix(in srgb, var(--surface-hover) 76%, transparent);
+}
+
+.thread-search-empty {
+  @apply mb-3 rounded-2xl border px-4 py-3 text-sm;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+  color: var(--text-muted);
+}
+
 .content-error {
   @apply m-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
 }
@@ -1059,6 +1340,19 @@ async function submitFirstMessageForNewThread(
 .ui-locale-label {
   @apply text-xs;
   color: var(--text-muted);
+}
+
+.project-instructions-input {
+  @apply min-h-28 w-full rounded-2xl border px-3 py-3 text-sm outline-none transition-colors duration-200;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+  color: var(--text-default);
+  box-shadow: var(--shadow-soft);
+  resize: vertical;
+}
+
+.project-instructions-input:focus-visible {
+  border-color: color-mix(in srgb, var(--accent-primary) 44%, var(--border-strong));
 }
 
 .ui-locale-select {
@@ -1185,6 +1479,10 @@ async function submitFirstMessageForNewThread(
   color: var(--text-muted);
 }
 
+.workflow-actions {
+  @apply flex flex-wrap gap-2;
+}
+
 @media (max-width: 960px) {
   .sidebar-root {
     @apply px-2 py-3;
@@ -1196,6 +1494,10 @@ async function submitFirstMessageForNewThread(
 
   .content-body {
     @apply gap-2 px-0 pb-[max(0.75rem,env(safe-area-inset-bottom))];
+  }
+
+  .thread-search-bar {
+    @apply mx-2;
   }
 
   .content-grid {
