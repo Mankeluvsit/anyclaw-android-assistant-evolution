@@ -131,7 +131,9 @@
                   @update-scroll-state="onUpdateThreadScrollState"
                   @respond-server-request="onRespondServerRequest"
                   @copy-message="onCopyMessage"
+                  @edit-message="onEditMessage"
                   @resend-message="onResendMessage"
+                  @regenerate-message="onRegenerateMessage"
                   @delete-from-message="onDeleteFromMessage"
                   @branch-from-message="onBranchFromMessage" />
               </div>
@@ -139,9 +141,12 @@
               <ThreadComposer :active-thread-id="composerThreadContextId"
                 :disabled="isSendingMessage || isLoadingMessages" :models="availableModelIds"
                 :selected-model="selectedModelId" :selected-reasoning-effort="selectedReasoningEffort"
+                :draft-seed="composerDraftSeed"
+                :edit-message-label="editingMessageLabel"
                 :is-turn-in-progress="isSelectedThreadInProgress" :is-interrupting-turn="isInterruptingTurn"
                 @submit="onSubmitThreadMessage" @update:selected-model="onSelectModel"
-                @update:selected-reasoning-effort="onSelectReasoningEffort" @interrupt="onInterruptTurn" />
+                @update:selected-reasoning-effort="onSelectReasoningEffort" @interrupt="onInterruptTurn"
+                @cancel-edit="clearEditingMessage" />
             </div>
           </template>
         </section>
@@ -278,6 +283,7 @@ import { useUiI18n, type LocalePreference } from './composables/useUiI18n'
 import { useUiSettings } from './composables/useUiSettings'
 import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
 import type { ReasoningEffort, ThreadScrollState } from './types/codex'
+import type { UiMessage } from './types/codex'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const { localePreference, setLocalePreference, t } = useUiI18n()
@@ -388,6 +394,8 @@ const rpcMethodCatalog = ref<string[]>([])
 const rpcNotificationCatalog = ref<string[]>([])
 const diagnosticsError = ref('')
 const isDiagnosticsLoading = ref(false)
+const editingMessageId = ref('')
+const composerDraftSeed = ref<{ key: string; text: string } | null>(null)
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -425,6 +433,7 @@ const filteredMessages = computed(() =>
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
+const editingMessageLabel = computed(() => (editingMessageId.value ? t('composer_editing_message') : ''))
 const DEFAULT_WORKSPACE_NAME = 'codex'
 
 const newThreadFolderOptions = computed(() => {
@@ -482,6 +491,7 @@ function onSidebarSearchKeydown(event: KeyboardEvent): void {
 
 function onSelectThread(threadId: string): void {
   if (!threadId) return
+  clearEditingMessage()
   if (route.name === 'thread' && routeThreadId.value === threadId) return
   if (isCompactViewport.value) {
     setSidebarCollapsed(true)
@@ -494,6 +504,7 @@ function onArchiveThread(threadId: string): void {
 }
 
 function onStartNewThread(projectName: string): void {
+  clearEditingMessage()
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   const projectCwd = projectGroup?.threads[0]?.cwd?.trim() ?? ''
   if (projectCwd) {
@@ -507,6 +518,7 @@ function onStartNewThread(projectName: string): void {
 }
 
 function onStartNewThreadFromToolbar(): void {
+  clearEditingMessage()
   const cwd = selectedThread.value?.cwd?.trim() ?? ''
   if (cwd) {
     newThreadCwd.value = cwd
@@ -545,10 +557,38 @@ function onCopyMessage(messageId: string): void {
   void navigator.clipboard.writeText(row.text)
 }
 
+function onEditMessage(messageId: string): void {
+  const row = filteredMessages.value.find((message) => message.id === messageId && message.role === 'user')
+  if (!row || row.text.trim().length === 0) return
+  editingMessageId.value = messageId
+  composerDraftSeed.value = {
+    key: `${messageId}:${Date.now()}`,
+    text: row.text,
+  }
+}
+
 function onResendMessage(messageId: string): void {
   const row = filteredMessages.value.find((message) => message.id === messageId)
   if (!row || row.text.trim().length === 0) return
   void sendMessageToSelectedThread(row.text)
+}
+
+function onRegenerateMessage(messageId: string): void {
+  void (async () => {
+    const assistantRow = filteredMessages.value.find((message) => message.id === messageId && message.role === 'assistant')
+    if (!assistantRow) return
+    const previousUserRow = findPreviousUserMessage(assistantRow)
+    if (!previousUserRow || previousUserRow.text.trim().length === 0) return
+
+    try {
+      await deleteFromMessage(messageId)
+      await sendMessageToSelectedThread(previousUserRow.text)
+    } catch (error) {
+      if (typeof window !== 'undefined') {
+        window.alert(error instanceof Error ? error.message : t('regenerate_message_failed'))
+      }
+    }
+  })()
 }
 
 function onDeleteFromMessage(messageId: string): void {
@@ -623,7 +663,18 @@ function onSubmitThreadMessage(text: string): void {
     void submitFirstMessageForNewThread(text)
     return
   }
-  void sendMessageToSelectedThread(text)
+  void (async () => {
+    const editingId = editingMessageId.value
+    try {
+      if (editingId) {
+        await deleteFromMessage(editingId)
+      }
+      await sendMessageToSelectedThread(text)
+      clearEditingMessage()
+    } catch {
+      // Error is already reflected in state.
+    }
+  })()
 }
 
 function onSelectNewThreadFolder(cwd: string): void {
@@ -652,6 +703,32 @@ function loadSidebarCollapsed(): boolean {
 function saveSidebarCollapsed(value: boolean): void {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, value ? '1' : '0')
+}
+
+function clearEditingMessage(): void {
+  editingMessageId.value = ''
+  composerDraftSeed.value = null
+}
+
+function findPreviousUserMessage(message: UiMessage): UiMessage | null {
+  const messagesBeforeTarget = filteredMessages.value.filter((row) => {
+    if (typeof message.turnIndex === 'number' && typeof row.turnIndex === 'number') {
+      return row.turnIndex === message.turnIndex && row.role === 'user'
+    }
+    return false
+  })
+  if (messagesBeforeTarget.length > 0) {
+    return messagesBeforeTarget[messagesBeforeTarget.length - 1] ?? null
+  }
+
+  const targetIndex = filteredMessages.value.findIndex((row) => row.id === message.id)
+  for (let index = targetIndex - 1; index >= 0; index -= 1) {
+    const row = filteredMessages.value[index]
+    if (row?.role === 'user' && row.text.trim().length > 0) {
+      return row
+    }
+  }
+  return null
 }
 
 function normalizeMessageType(rawType: string | undefined, role: string): string {

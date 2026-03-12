@@ -127,9 +127,21 @@
                     </UiDropdownMenuItem>
                     <UiDropdownMenuItem
                       v-if="message.role === 'user'"
+                      @select="onEditMessage(message.id)"
+                    >
+                      {{ t('message_action_edit') }}
+                    </UiDropdownMenuItem>
+                    <UiDropdownMenuItem
+                      v-if="message.role === 'user'"
                       @select="onResendMessage(message.id)"
                     >
                       {{ t('message_action_resend') }}
+                    </UiDropdownMenuItem>
+                    <UiDropdownMenuItem
+                      v-if="message.role === 'assistant'"
+                      @select="onRegenerateMessage(message.id)"
+                    >
+                      {{ t('message_action_regenerate') }}
                     </UiDropdownMenuItem>
                     <UiDropdownMenuItem
                       :disabled="typeof message.turnIndex !== 'number'"
@@ -237,7 +249,9 @@ const emit = defineEmits<{
   updateScrollState: [payload: { threadId: string; state: ThreadScrollState }]
   respondServerRequest: [payload: { id: number; result?: unknown; error?: { code?: number; message: string } }]
   copyMessage: [messageId: string]
+  editMessage: [messageId: string]
   resendMessage: [messageId: string]
+  regenerateMessage: [messageId: string]
   deleteFromMessage: [messageId: string]
   branchFromMessage: [messageId: string]
 }>()
@@ -748,8 +762,16 @@ function onCopyMessage(messageId: string): void {
   emit('copyMessage', messageId)
 }
 
+function onEditMessage(messageId: string): void {
+  emit('editMessage', messageId)
+}
+
 function onResendMessage(messageId: string): void {
   emit('resendMessage', messageId)
+}
+
+function onRegenerateMessage(messageId: string): void {
+  emit('regenerateMessage', messageId)
 }
 
 function onDeleteFromMessage(messageId: string): void {

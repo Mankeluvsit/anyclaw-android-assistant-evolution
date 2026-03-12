@@ -1,6 +1,13 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit">
     <div class="thread-composer-shell">
+      <div v-if="editMessageLabel" class="thread-composer-editing">
+        <span class="thread-composer-editing-label">{{ editMessageLabel }}</span>
+        <button class="thread-composer-editing-dismiss" type="button" @click="onCancelEdit">
+          <IconTablerX class="thread-composer-editing-dismiss-icon" />
+        </button>
+      </div>
+
       <textarea
         ref="inputRef"
         v-model="draft"
@@ -64,6 +71,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { ReasoningEffort } from '../../types/codex'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
+import IconTablerX from '../icons/IconTablerX.vue'
 import UiTooltip from '../ui/UiTooltip.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
@@ -78,6 +86,8 @@ const props = defineProps<{
   models: string[]
   selectedModel: string
   selectedReasoningEffort: ReasoningEffort | ''
+  draftSeed?: { key: string; text: string } | null
+  editMessageLabel?: string
   isTurnInProgress?: boolean
   isInterruptingTurn?: boolean
   disabled?: boolean
@@ -86,6 +96,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   submit: [text: string]
   interrupt: []
+  cancelEdit: []
   'update:selected-model': [modelId: string]
   'update:selected-reasoning-effort': [effort: ReasoningEffort | '']
 }>()
@@ -126,6 +137,10 @@ function onSubmit(): void {
 
 function onInterrupt(): void {
   emit('interrupt')
+}
+
+function onCancelEdit(): void {
+  emit('cancelEdit')
 }
 
 function onModelSelect(value: string): void {
@@ -197,6 +212,21 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => props.draftSeed?.key,
+  () => {
+    const seed = props.draftSeed
+    if (!seed || !props.activeThreadId) return
+    draft.value = seed.text
+    persistDraft(seed.text)
+    syncTextareaHeight()
+    nextTick(() => {
+      inputRef.value?.focus()
+      inputRef.value?.setSelectionRange(draft.value.length, draft.value.length)
+    })
+  },
+)
+
 watch(draft, () => {
   syncTextareaHeight()
 })
@@ -214,6 +244,32 @@ watch(draft, () => {
   border-color: var(--border-subtle);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
+}
+
+.thread-composer-editing {
+  @apply mb-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2;
+  border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-elevated));
+}
+
+.thread-composer-editing-label {
+  @apply min-w-0 truncate text-xs font-semibold uppercase tracking-[0.18em];
+  color: var(--accent-primary);
+}
+
+.thread-composer-editing-dismiss {
+  @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-0 transition-colors duration-200;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.thread-composer-editing-dismiss:hover {
+  color: var(--text-default);
+  background: color-mix(in srgb, var(--surface-hover) 72%, white);
+}
+
+.thread-composer-editing-dismiss-icon {
+  @apply h-4 w-4;
 }
 
 .thread-composer-input {
