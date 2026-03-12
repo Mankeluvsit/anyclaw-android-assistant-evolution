@@ -108,6 +108,22 @@ export type UiLiveOverlay = {
   errorText: string
 }
 
+export type UiDiagnosticEvent = {
+  id: string
+  kind: 'event' | 'error'
+  scope: 'codex' | 'openclaw' | 'bridge' | 'thread'
+  title: string
+  detail: string
+  atIso: string
+  threadId?: string
+}
+
+export type UiConnectionHealth = {
+  notificationStreamConnected: boolean
+  lastNotificationAtIso: string
+  lastSyncAtIso: string
+}
+
 export type UiProjectGroup = {
   projectName: string
   threads: UiThread[]

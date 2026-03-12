@@ -17,6 +17,8 @@ import {
   type RpcNotification,
 } from '../api/codexGateway'
 import type {
+  UiConnectionHealth,
+  UiDiagnosticEvent,
   ReasoningEffort,
   ThreadScrollState,
   UiLiveOverlay,
@@ -41,6 +43,8 @@ const EVENT_SYNC_DEBOUNCE_MS = 220
 const AUTO_REFRESH_INTERVAL_MS = 4000
 const REASONING_EFFORT_OPTIONS: ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const GLOBAL_SERVER_REQUEST_SCOPE = '__global__'
+const MAX_DIAGNOSTIC_EVENTS = 40
+const MAX_DIAGNOSTIC_ERRORS = 20
 
 function loadReadStateMap(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -562,6 +566,13 @@ export function useDesktopState() {
   const turnErrorByThreadId = ref<Record<string, TurnErrorState>>({})
   const activeTurnIdByThreadId = ref<Record<string, string>>({})
   const pendingServerRequestsByThreadId = ref<Record<string, UiServerRequest[]>>({})
+  const diagnosticEvents = ref<UiDiagnosticEvent[]>([])
+  const diagnosticErrors = ref<UiDiagnosticEvent[]>([])
+  const connectionHealth = ref<UiConnectionHealth>({
+    notificationStreamConnected: false,
+    lastNotificationAtIso: '',
+    lastSyncAtIso: '',
+  })
 
   const isLoadingThreads = ref(false)
   const isLoadingMessages = ref(false)
@@ -629,6 +640,34 @@ export function useDesktopState() {
     return insertTurnSummaryMessage(combined, summary)
   })
 
+  function pushDiagnosticEvent(entry: Omit<UiDiagnosticEvent, 'id' | 'kind' | 'atIso'> & { atIso?: string }): void {
+    const nextEntry: UiDiagnosticEvent = {
+      id: `${entry.scope}:${entry.threadId ?? 'global'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      kind: 'event',
+      atIso: entry.atIso ?? new Date().toISOString(),
+      ...entry,
+    }
+    diagnosticEvents.value = [nextEntry, ...diagnosticEvents.value].slice(0, MAX_DIAGNOSTIC_EVENTS)
+  }
+
+  function pushDiagnosticError(entry: Omit<UiDiagnosticEvent, 'id' | 'kind' | 'atIso'> & { atIso?: string }): void {
+    const nextEntry: UiDiagnosticEvent = {
+      id: `${entry.scope}:${entry.threadId ?? 'global'}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      kind: 'error',
+      atIso: entry.atIso ?? new Date().toISOString(),
+      ...entry,
+    }
+    diagnosticErrors.value = [nextEntry, ...diagnosticErrors.value].slice(0, MAX_DIAGNOSTIC_ERRORS)
+    error.value = nextEntry.detail
+  }
+
+  function markSyncTime(atIso = new Date().toISOString()): void {
+    connectionHealth.value = {
+      ...connectionHealth.value,
+      lastSyncAtIso: atIso,
+    }
+  }
+
   function setSelectedThreadId(nextThreadId: string): void {
     if (selectedThreadId.value === nextThreadId) return
     selectedThreadId.value = nextThreadId
@@ -688,6 +727,7 @@ export function useDesktopState() {
         ])
 
         applyModelPreferences(modelIds, currentConfig)
+        markSyncTime()
         return
       } catch {
         if (attempt < MAX_RETRIES) {
@@ -1330,6 +1370,19 @@ export function useDesktopState() {
       return
     }
 
+    connectionHealth.value = {
+      ...connectionHealth.value,
+      notificationStreamConnected: true,
+      lastNotificationAtIso: notification.atIso || new Date().toISOString(),
+    }
+    pushDiagnosticEvent({
+      scope: notification.method.startsWith('item/') ? 'thread' : 'bridge',
+      threadId: extractThreadIdFromNotification(notification) || undefined,
+      title: notification.method,
+      detail: notification.method,
+      atIso: notification.atIso,
+    })
+
     const turnActivity = readTurnActivity(notification)
     if (turnActivity) {
       setTurnActivityForThread(turnActivity.threadId, turnActivity.activity)
@@ -1384,7 +1437,12 @@ export function useDesktopState() {
       if (failedThreadId) {
         setTurnErrorForThread(failedThreadId, turnErrorMessage)
       }
-      error.value = turnErrorMessage
+      pushDiagnosticError({
+        scope: 'thread',
+        threadId: failedThreadId || undefined,
+        title: 'Turn error',
+        detail: turnErrorMessage,
+      })
     } else if (completedTurn) {
       setTurnErrorForThread(completedTurn.threadId, null)
     }
@@ -1513,6 +1571,7 @@ export function useDesktopState() {
 
       const flatThreads = flattenThreads(projectGroups.value)
       pruneThreadScopedState(flatThreads)
+      markSyncTime()
 
       const currentExists = flatThreads.some((thread) => thread.id === selectedThreadId.value)
 
@@ -1572,6 +1631,7 @@ export function useDesktopState() {
       if (shouldShowLoading) {
         isLoadingMessages.value = false
       }
+      markSyncTime()
     }
   }
 
@@ -1656,7 +1716,12 @@ export function useDesktopState() {
       await loadMessages(threadId)
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      error.value = errorMessage
+      pushDiagnosticError({
+        scope: 'thread',
+        threadId,
+        title: 'Delete from message failed',
+        detail: errorMessage,
+      })
       throw unknownError
     }
   }
@@ -1682,7 +1747,12 @@ export function useDesktopState() {
       return nextThreadId
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      error.value = errorMessage
+      pushDiagnosticError({
+        scope: 'thread',
+        threadId,
+        title: 'Branch from message failed',
+        detail: errorMessage,
+      })
       throw unknownError
     }
   }
@@ -1705,13 +1775,24 @@ export function useDesktopState() {
 
     try {
       await startTurnForThread(threadId, nextText)
+      pushDiagnosticEvent({
+        scope: 'thread',
+        threadId,
+        title: 'Turn submitted',
+        detail: 'Queued message for selected thread.',
+      })
     } catch (unknownError) {
       shouldAutoScrollOnNextAgentEvent = false
       setThreadInProgress(threadId, false)
       setTurnActivityForThread(threadId, null)
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
       setTurnErrorForThread(threadId, errorMessage)
-      error.value = errorMessage
+      pushDiagnosticError({
+        scope: 'thread',
+        threadId,
+        title: 'Send message failed',
+        detail: errorMessage,
+      })
       throw unknownError
     } finally {
       isSendingMessage.value = false
@@ -1747,6 +1828,12 @@ export function useDesktopState() {
       setThreadInProgress(threadId, true)
 
       await startTurnForThread(threadId, nextText)
+      pushDiagnosticEvent({
+        scope: 'thread',
+        threadId,
+        title: 'Thread started',
+        detail: 'Started a new thread and submitted the first message.',
+      })
       return threadId
     } catch (unknownError) {
       shouldAutoScrollOnNextAgentEvent = false
@@ -1758,7 +1845,12 @@ export function useDesktopState() {
       if (threadId) {
         setTurnErrorForThread(threadId, errorMessage)
       }
-      error.value = errorMessage
+      pushDiagnosticError({
+        scope: 'thread',
+        threadId: threadId || undefined,
+        title: 'Start thread failed',
+        detail: errorMessage,
+      })
       throw unknownError
     } finally {
       isSendingMessage.value = false
@@ -1816,7 +1908,12 @@ export function useDesktopState() {
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to interrupt active turn'
       setTurnErrorForThread(threadId, errorMessage)
-      error.value = errorMessage
+      pushDiagnosticError({
+        scope: 'thread',
+        threadId,
+        title: 'Interrupt failed',
+        detail: errorMessage,
+      })
     } finally {
       isInterruptingTurn.value = false
     }
@@ -1969,10 +2066,36 @@ export function useDesktopState() {
       startAutoRefreshTimer()
     }
     void loadPendingServerRequestsFromBridge()
-    stopNotificationStream = subscribeCodexNotifications((notification) => {
-      applyRealtimeUpdates(notification)
-      queueEventDrivenSync(notification)
-    })
+    stopNotificationStream = subscribeCodexNotifications(
+      (notification) => {
+        applyRealtimeUpdates(notification)
+        queueEventDrivenSync(notification)
+      },
+      {
+        onOpen: () => {
+          connectionHealth.value = {
+            ...connectionHealth.value,
+            notificationStreamConnected: true,
+          }
+          pushDiagnosticEvent({
+            scope: 'bridge',
+            title: 'Notification stream connected',
+            detail: 'Realtime Codex events are connected.',
+          })
+        },
+        onError: () => {
+          connectionHealth.value = {
+            ...connectionHealth.value,
+            notificationStreamConnected: false,
+          }
+          pushDiagnosticError({
+            scope: 'bridge',
+            title: 'Notification stream disconnected',
+            detail: 'Realtime Codex events disconnected or failed to connect.',
+          })
+        },
+      },
+    )
   }
 
   async function loadPendingServerRequestsFromBridge(): Promise<void> {
@@ -1984,6 +2107,7 @@ export function useDesktopState() {
           upsertPendingServerRequest(request)
         }
       }
+      markSyncTime()
     } catch {
       // Keep UI usable when pending request endpoint is temporarily unavailable.
     }
@@ -1997,7 +2121,11 @@ export function useDesktopState() {
       })
       removePendingServerRequestById(reply.id)
     } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request'
+      pushDiagnosticError({
+        scope: 'bridge',
+        title: 'Server request reply failed',
+        detail: unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request',
+      })
     }
   }
 
@@ -2053,6 +2181,11 @@ export function useDesktopState() {
       stopNotificationStream = null
     }
 
+    connectionHealth.value = {
+      ...connectionHealth.value,
+      notificationStreamConnected: false,
+    }
+
     pendingThreadsRefresh = false
     pendingThreadMessageRefresh.clear()
     pendingTurnStartsById.clear()
@@ -2090,6 +2223,9 @@ export function useDesktopState() {
     isAutoRefreshEnabled,
     autoRefreshSecondsLeft,
     error,
+    diagnosticEvents,
+    diagnosticErrors,
+    connectionHealth,
     refreshAll,
     selectThread,
     setThreadScrollState,

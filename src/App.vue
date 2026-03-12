@@ -241,11 +241,55 @@
               <p class="diagnostics-label">{{ t('diagnostics_requests') }}</p>
               <p class="diagnostics-value">{{ selectedThreadServerRequests.length }}</p>
             </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_stream') }}</p>
+              <p class="diagnostics-value">{{ connectionHealth.notificationStreamConnected ? t('diagnostics_connected') : t('diagnostics_disconnected') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_last_event') }}</p>
+              <p class="diagnostics-value">{{ formattedLastNotificationAt }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('diagnostics_last_sync') }}</p>
+              <p class="diagnostics-value">{{ formattedLastSyncAt }}</p>
+            </article>
+            <article class="diagnostics-card diagnostics-card-wide">
+              <p class="diagnostics-label">{{ t('diagnostics_current_error') }}</p>
+              <p class="diagnostics-value diagnostics-value-wrap">{{ error || t('diagnostics_none') }}</p>
+            </article>
           </div>
           <UiButton variant="surface" size="sm" class="diagnostics-refresh-button" @click="refreshDiagnostics">
             {{ t('diagnostics_refresh') }}
           </UiButton>
           <p v-if="diagnosticsError" class="diagnostics-error">{{ diagnosticsError }}</p>
+          <div v-if="diagnosticErrors.length > 0" class="diagnostics-log-block">
+            <p class="diagnostics-log-title">{{ t('diagnostics_errors') }}</p>
+            <article
+              v-for="entry in diagnosticErrors"
+              :key="entry.id"
+              class="diagnostics-log-entry diagnostics-log-entry-error"
+            >
+              <div class="diagnostics-log-row">
+                <p class="diagnostics-log-heading">{{ entry.title }}</p>
+                <span class="diagnostics-log-time">{{ formatDiagnosticsTime(entry.atIso) }}</span>
+              </div>
+              <p class="diagnostics-log-detail">{{ entry.detail }}</p>
+            </article>
+          </div>
+          <div v-if="diagnosticEvents.length > 0" class="diagnostics-log-block">
+            <p class="diagnostics-log-title">{{ t('diagnostics_events') }}</p>
+            <article
+              v-for="entry in diagnosticEvents"
+              :key="entry.id"
+              class="diagnostics-log-entry"
+            >
+              <div class="diagnostics-log-row">
+                <p class="diagnostics-log-heading">{{ entry.title }}</p>
+                <span class="diagnostics-log-time">{{ formatDiagnosticsTime(entry.atIso) }}</span>
+              </div>
+              <p class="diagnostics-log-detail">{{ entry.detail }}</p>
+            </article>
+          </div>
           <ApiMethodsPanel :methods="rpcMethodCatalog" :is-loading="isDiagnosticsLoading" />
           <ApiMethodsPanel :methods="rpcNotificationCatalog" :is-loading="isDiagnosticsLoading" />
         </AccordionContent>
@@ -360,6 +404,10 @@ const {
   isInterruptingTurn,
   isAutoRefreshEnabled,
   autoRefreshSecondsLeft,
+  error,
+  diagnosticEvents,
+  diagnosticErrors,
+  connectionHealth,
   refreshAll,
   selectThread,
   setThreadScrollState,
@@ -434,6 +482,8 @@ const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
 const editingMessageLabel = computed(() => (editingMessageId.value ? t('composer_editing_message') : ''))
+const formattedLastNotificationAt = computed(() => formatDiagnosticsTime(connectionHealth.value.lastNotificationAtIso))
+const formattedLastSyncAt = computed(() => formatDiagnosticsTime(connectionHealth.value.lastSyncAtIso))
 const DEFAULT_WORKSPACE_NAME = 'codex'
 
 const newThreadFolderOptions = computed(() => {
@@ -583,10 +633,8 @@ function onRegenerateMessage(messageId: string): void {
     try {
       await deleteFromMessage(messageId)
       await sendMessageToSelectedThread(previousUserRow.text)
-    } catch (error) {
-      if (typeof window !== 'undefined') {
-        window.alert(error instanceof Error ? error.message : t('regenerate_message_failed'))
-      }
+    } catch {
+      // Error is already reflected in diagnostics state.
     }
   })()
 }
@@ -599,11 +647,7 @@ function onDeleteFromMessage(messageId: string): void {
   void (async () => {
     try {
       await deleteFromMessage(messageId)
-    } catch (error) {
-      if (typeof window !== 'undefined') {
-        window.alert(error instanceof Error ? error.message : t('delete_message_failed'))
-      }
-    }
+    } catch {}
   })()
 }
 
@@ -611,11 +655,7 @@ function onBranchFromMessage(messageId: string): void {
   void (async () => {
     try {
       await forkFromMessage(messageId)
-    } catch (error) {
-      if (typeof window !== 'undefined') {
-        window.alert(error instanceof Error ? error.message : t('branch_message_failed'))
-      }
-    }
+    } catch {}
   })()
 }
 
@@ -708,6 +748,13 @@ function saveSidebarCollapsed(value: boolean): void {
 function clearEditingMessage(): void {
   editingMessageId.value = ''
   composerDraftSeed.value = null
+}
+
+function formatDiagnosticsTime(value: string): string {
+  if (!value) return t('diagnostics_none')
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function findPreviousUserMessage(message: UiMessage): UiMessage | null {
@@ -1069,6 +1116,10 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
   background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
 }
 
+.diagnostics-card-wide {
+  @apply sm:col-span-2;
+}
+
 .diagnostics-label {
   @apply m-0 text-[11px] font-semibold uppercase tracking-[0.18em];
   color: var(--text-muted);
@@ -1079,6 +1130,10 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
   color: var(--text-default);
 }
 
+.diagnostics-value-wrap {
+  @apply break-words;
+}
+
 .diagnostics-refresh-button {
   @apply w-fit;
 }
@@ -1086,6 +1141,45 @@ async function submitFirstMessageForNewThread(text: string): Promise<void> {
 .diagnostics-error {
   @apply m-0 text-sm;
   color: #f87171;
+}
+
+.diagnostics-log-block {
+  @apply flex flex-col gap-2;
+}
+
+.diagnostics-log-title {
+  @apply m-0 text-[11px] font-semibold uppercase tracking-[0.18em];
+  color: var(--text-muted);
+}
+
+.diagnostics-log-entry {
+  @apply rounded-2xl border px-3 py-3;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 78%, transparent);
+}
+
+.diagnostics-log-entry-error {
+  border-color: color-mix(in srgb, #f87171 32%, var(--border-subtle));
+  background: color-mix(in srgb, #7f1d1d 18%, var(--surface-hover));
+}
+
+.diagnostics-log-row {
+  @apply flex items-start justify-between gap-3;
+}
+
+.diagnostics-log-heading {
+  @apply m-0 text-sm font-semibold;
+  color: var(--text-default);
+}
+
+.diagnostics-log-time {
+  @apply shrink-0 text-[11px] uppercase tracking-[0.14em];
+  color: var(--text-muted);
+}
+
+.diagnostics-log-detail {
+  @apply mt-2 mb-0 text-sm leading-6 break-words;
+  color: var(--text-muted);
 }
 
 @media (max-width: 960px) {

@@ -141,12 +141,26 @@ function toNotification(value: unknown): RpcNotification | null {
   }
 }
 
-export function subscribeRpcNotifications(onNotification: (value: RpcNotification) => void): () => void {
+export function subscribeRpcNotifications(
+  onNotification: (value: RpcNotification) => void,
+  options: {
+    onOpen?: () => void
+    onError?: () => void
+  } = {},
+): () => void {
   if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
     return () => {}
   }
 
   const source = new EventSource('/codex-api/events')
+
+  source.onopen = () => {
+    options.onOpen?.()
+  }
+
+  source.onerror = () => {
+    options.onError?.()
+  }
 
   source.onmessage = (event) => {
     try {

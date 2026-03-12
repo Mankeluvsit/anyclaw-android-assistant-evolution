@@ -79,8 +79,14 @@ export async function getNotificationCatalog(): Promise<string[]> {
   return fetchRpcNotificationCatalog()
 }
 
-export function subscribeCodexNotifications(onNotification: (value: RpcNotification) => void): () => void {
-  return subscribeRpcNotifications(onNotification)
+export function subscribeCodexNotifications(
+  onNotification: (value: RpcNotification) => void,
+  options: {
+    onOpen?: () => void
+    onError?: () => void
+  } = {},
+): () => void {
+  return subscribeRpcNotifications(onNotification, options)
 }
 
 export type { RpcNotification }
