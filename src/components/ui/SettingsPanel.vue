@@ -77,7 +77,7 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel {
-  @apply fixed right-0 top-0 z-[121] h-full w-full max-w-md border-l px-5 py-5 outline-none;
+  @apply fixed right-0 top-0 z-[121] flex h-full w-full max-w-md flex-col border-l px-5 py-5 outline-none;
   border-color: var(--border-subtle);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 97%, transparent), var(--surface-base));
@@ -109,11 +109,11 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel-body {
-  @apply flex h-full flex-col gap-6 pt-5 pr-4;
+  @apply flex h-full min-h-0 flex-col gap-6 overflow-y-auto pt-5 pr-4;
 }
 
 .settings-panel-scroll {
-  @apply mt-1 h-[calc(100%-5.5rem)];
+  @apply mt-1 min-h-0 flex-1;
 }
 
 .settings-panel-scrollbar {

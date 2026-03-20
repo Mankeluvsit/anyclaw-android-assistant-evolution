@@ -74,7 +74,7 @@
 
     <template #content>
       <section class="content-root">
-        <ContentHeader :title="contentTitle">
+        <ContentHeader :title="contentTitle" build-badge="Codex UI vNext">
           <template #leading>
             <SidebarThreadControls
               v-if="isSidebarCollapsed"

@@ -1,6 +1,11 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit">
     <div class="thread-composer-shell">
+      <div class="thread-composer-badge-row">
+        <span class="thread-composer-badge">Updated composer</span>
+        <span class="thread-composer-badge-copy">Multiline, drafts, attachments</span>
+      </div>
+
       <div v-if="editMessageLabel" class="thread-composer-editing">
         <span class="thread-composer-editing-label">{{ editMessageLabel }}</span>
         <button class="thread-composer-editing-dismiss" type="button" @click="onCancelEdit">
@@ -343,6 +348,21 @@ watch(
   border-color: var(--border-subtle);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
+}
+
+.thread-composer-badge-row {
+  @apply mb-3 flex flex-wrap items-center gap-2;
+}
+
+.thread-composer-badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em];
+  color: var(--accent-on-primary);
+  background: var(--accent-primary);
+}
+
+.thread-composer-badge-copy {
+  @apply text-xs font-medium;
+  color: var(--text-muted);
 }
 
 .thread-composer-editing {

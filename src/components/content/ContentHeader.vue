@@ -3,7 +3,10 @@
     <div class="content-leading">
       <slot name="leading" />
     </div>
-    <h1 class="content-title">{{ title }}</h1>
+    <div class="content-title-wrap">
+      <h1 class="content-title">{{ title }}</h1>
+      <span v-if="buildBadge" class="content-build-badge">{{ buildBadge }}</span>
+    </div>
     <div class="content-actions">
       <slot name="actions" />
     </div>
@@ -13,6 +16,7 @@
 <script setup lang="ts">
 defineProps<{
   title: string
+  buildBadge?: string
 }>()
 </script>
 
@@ -27,9 +31,20 @@ defineProps<{
 }
 
 .content-title {
-  @apply m-0 min-w-0 flex-1 truncate text-sm font-semibold leading-6 tracking-[0.01em];
+  @apply m-0 min-w-0 truncate text-sm font-semibold leading-6 tracking-[0.01em];
   color: var(--text-default);
   font-family: var(--font-display);
+}
+
+.content-title-wrap {
+  @apply min-w-0 flex flex-1 items-center gap-2;
+}
+
+.content-build-badge {
+  @apply shrink-0 rounded-full px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em];
+  color: var(--accent-on-primary);
+  background: var(--accent-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-primary) 28%, transparent);
 }
 
 .content-actions {

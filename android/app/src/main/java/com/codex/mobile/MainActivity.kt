@@ -424,11 +424,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateOpenClawFallbackButtonsVisibility(url: String?) {
-        val visible = webView.visibility == View.VISIBLE && isOpenClawChatUrl(url)
-        val state = if (visible) View.VISIBLE else View.GONE
-        traceToggleFallbackButton.visibility = state
-        historyMoreFallbackButton.visibility = state
-        historyResetFallbackButton.visibility = state
+        traceToggleFallbackButton.visibility = View.GONE
+        historyMoreFallbackButton.visibility = View.GONE
+        historyResetFallbackButton.visibility = View.GONE
     }
 
     private fun toggleOpenClawProcessViewFallback() {
@@ -686,12 +684,6 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             showLoading(false)
             webView.visibility = View.VISIBLE
-            permissionCenterButton.visibility = View.VISIBLE
-            promptManagerButton.visibility = View.VISIBLE
-            conversationManagerButton.visibility = View.VISIBLE
-            modelManagerButton.visibility = View.VISIBLE
-            gatewayToggleButton.visibility = View.VISIBLE
-            backToCodexButton.visibility = View.VISIBLE
             updateOpenClawFallbackButtonsVisibility(webView.url)
             applyGatewayConnectedState(false, announce = false)
             startGatewayStatusMonitor()
@@ -745,10 +737,7 @@ class MainActivity : AppCompatActivity() {
                     "http://127.0.0.1:$serverPort/thread/${Uri.encode(threadId)}?$query"
                 }
             }
-            OPEN_TARGET_OPENCLAW_SESSION -> {
-                val sessionKey = intent?.getStringExtra(EXTRA_SESSION_KEY)?.trim().orEmpty()
-                if (sessionKey.isEmpty()) null else buildOpenClawChatUrl(sessionKey)
-            }
+            OPEN_TARGET_OPENCLAW_SESSION -> null
             else -> null
         }
     }

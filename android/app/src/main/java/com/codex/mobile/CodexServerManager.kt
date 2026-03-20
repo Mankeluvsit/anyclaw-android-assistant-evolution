@@ -30,6 +30,7 @@ class CodexServerManager(private val context: Context) {
         private const val BASE_OPENCLAW_CONTROL_UI_PORT = 19001
         private const val ISOLATED_PORT_OFFSET = 10000
         private const val TEST_PACKAGE_SUFFIX = ".pocketlobster.test"
+        private const val BETA_PACKAGE_SUFFIX = ".beta"
         private const val ANYCLAW_SEARCH_PLUGIN_ID = "anyclaw-search-suite"
         private const val ANYCLAW_GITHUB_PLUGIN_ID = "anyclaw-github-suite"
         private const val ANYCLAW_DEVICE_PLUGIN_ID = "anyclaw-device-suite"
@@ -44,7 +45,7 @@ class CodexServerManager(private val context: Context) {
 
         @JvmStatic
         fun useIsolatedPortsForPackage(packageName: String): Boolean =
-            packageName.endsWith(TEST_PACKAGE_SUFFIX)
+            packageName.endsWith(TEST_PACKAGE_SUFFIX) || packageName.endsWith(BETA_PACKAGE_SUFFIX)
 
         @JvmStatic
         fun serverPortForPackage(packageName: String): Int =
@@ -1451,14 +1452,14 @@ H3
                   'setHistoryLimit(getHistoryLimit());' +
                   'function replaceFirstTextNode(el,next){if(!el){return;}for(var i=0;i<el.childNodes.length;i++){var n=el.childNodes[i];if(n&&n.nodeType===3){n.nodeValue=\" \"+next+\" \";return;}}if(!el.children||el.children.length===0){el.textContent=next;}}' +
                   'function normalizeSpace(text){var s=(text||\"\");return s.replace(/\\s+/g,\" \").trim();}' +
-                  'function installHistoryControls(){var wrap=document.getElementById(\"anyclaw-history-controls\");if(!wrap){wrap=document.createElement(\"div\");wrap.id=\"anyclaw-history-controls\";wrap.style.position=\"fixed\";wrap.style.left=\"12px\";wrap.style.top=\"56px\";wrap.style.zIndex=\"2147482999\";wrap.style.display=\"flex\";wrap.style.gap=\"8px\";wrap.style.alignItems=\"center\";wrap.style.flexWrap=\"wrap\";wrap.style.maxWidth=\"92vw\";document.body.appendChild(wrap);}wrap.innerHTML=\"\";var current=getHistoryLimit();var more=document.createElement(\"button\");more.type=\"button\";more.textContent=isZh?(\"加载更早历史 +\"+HISTORY_STEP):(\"Load older +\"+HISTORY_STEP);more.style.padding=\"6px 10px\";more.style.borderRadius=\"8px\";more.style.border=\"1px solid rgba(255,255,255,0.25)\";more.style.background=\"rgba(17,24,39,0.88)\";more.style.color=\"#fff\";more.addEventListener(\"click\",function(){var next=setHistoryLimit(current+HISTORY_STEP);var u=new URL(location.href);u.searchParams.set(\"historyLimit\",String(next));location.assign(u.toString());});var reset=document.createElement(\"button\");reset.type=\"button\";reset.textContent=isZh?\"恢复轻量\":\"Reset lite\";reset.style.padding=\"6px 10px\";reset.style.borderRadius=\"8px\";reset.style.border=\"1px solid rgba(255,255,255,0.25)\";reset.style.background=\"rgba(17,24,39,0.88)\";reset.style.color=\"#fff\";reset.addEventListener(\"click\",function(){var next=setHistoryLimit(HISTORY_DEFAULT);var u=new URL(location.href);u.searchParams.set(\"historyLimit\",String(next));location.assign(u.toString());});var tip=document.createElement(\"span\");tip.textContent=isZh?(\"历史窗口 \"+current):(\"History window \"+current);tip.style.fontSize=\"12px\";tip.style.padding=\"6px 8px\";tip.style.borderRadius=\"8px\";tip.style.background=\"rgba(17,24,39,0.82)\";tip.style.color=\"#fff\";wrap.appendChild(more);wrap.appendChild(reset);wrap.appendChild(tip);}' +
-                  'function localizeStatic(){if(!isZh){return;}var map={\"New session\":\"新建会话\",\"Send\":\"发送\",\"Queue\":\"排队发送\",\"Stop\":\"停止\",\"Connect\":\"连接\",\"Refresh\":\"刷新\",\"Exit focus mode\":\"退出专注模式\"};document.querySelectorAll(\"button\").forEach(function(btn){var raw=normalizeSpace(btn.textContent||\"\");if(map[raw]){replaceFirstTextNode(btn,map[raw]);}var aria=normalizeSpace(btn.getAttribute(\"aria-label\")||\"\");if(map[aria]){btn.setAttribute(\"aria-label\",map[aria]);}if(aria===\"Remove queued message\"){btn.setAttribute(\"aria-label\",\"移除排队消息\");}var title=normalizeSpace(btn.getAttribute(\"title\")||\"\");if(map[title]){btn.setAttribute(\"title\",map[title]);}});document.querySelectorAll(\"textarea\").forEach(function(el){var p=normalizeSpace(el.getAttribute(\"placeholder\")||\"\");if(p.indexOf(\"Message\")===0||p.indexOf(\"Type a message\")===0){el.setAttribute(\"placeholder\",\"输入消息（回车发送，Shift+回车换行，可粘贴图片）\");}});document.querySelectorAll(\".muted\").forEach(function(el){var t=normalizeSpace(el.textContent||\"\");if(t===\"Loading chat…\"){el.textContent=\"正在加载聊天…\";}});document.querySelectorAll(\".chat-queue__title\").forEach(function(el){var t=normalizeSpace(el.textContent||\"\");if(t.indexOf(\"Queued (\")===0&&t.endsWith(\")\")){el.textContent=\"排队（\"+t.slice(8,t.length-1)+\"）\";}});document.querySelectorAll(\".chat-new-messages\").forEach(function(el){var t=normalizeSpace(el.textContent||\"\");if(t.indexOf(\"New messages\")===0){el.textContent=\"新消息\";}});document.querySelectorAll(\".exec-approval-title\").forEach(function(el){if(normalizeSpace(el.textContent||\"\")===\"Change Gateway URL\"){el.textContent=\"切换网关地址\";}});document.querySelectorAll(\".exec-approval-sub\").forEach(function(el){if(normalizeSpace(el.textContent||\"\")===\"This will reconnect to a different gateway server\"){el.textContent=\"这会重新连接到新的网关服务\";}});document.querySelectorAll(\".exec-approval-card .callout.danger\").forEach(function(el){var t=normalizeSpace(el.textContent||\"\");if(t.indexOf(\"Only confirm if you trust this URL\")===0){el.textContent=\"仅在信任该地址时确认。恶意地址可能导致系统风险。\";}});document.querySelectorAll(\".exec-approval-actions button\").forEach(function(btn){var t=normalizeSpace(btn.textContent||\"\");if(t===\"Confirm\"){replaceFirstTextNode(btn,\"确认\");btn.setAttribute(\"aria-label\",\"确认\");}else if(t===\"Cancel\"){replaceFirstTextNode(btn,\"取消\");btn.setAttribute(\"aria-label\",\"取消\");}});}' +
+                  'function installHistoryControls(){return;}' +
+                  'function localizeStatic(){return;}' +
                   'function makeSessionKey(current){var now=Date.now().toString(36);var key=(current||\"main\").trim();if(key.indexOf(\"agent:\")===0){var parts=key.split(\":\");var agent=(parts.length>1&&parts[1])?parts[1]:\"main\";return \"agent:\"+agent+\":mobile-\"+now;}return \"mobile-\"+now;}' +
                   'function patchChatHistoryRequest(){var app=document.querySelector(\"openclaw-app\");if(!app||!app.client||typeof app.client.request!==\"function\"){return;}if(app.client.__anyclawReqPatched===\"1\"){return;}var orig=app.client.request.bind(app.client);app.client.request=function(method,params){try{if(method===\"chat.history\"&&params&&typeof params===\"object\"){var capped=getHistoryLimit();var wanted=Number(params.limit);if(!Number.isFinite(wanted)){wanted=capped;}if(wanted>capped){wanted=capped;}params=Object.assign({},params,{limit:wanted});}}catch(_){}return orig(method,params);};app.client.__anyclawReqPatched=\"1\";}' +
-                  'function openNewSessionDirect(){var app=document.querySelector(\"openclaw-app\");if(!app||!app.client||!app.connected){return;}var nextKey=makeSessionKey(app.sessionKey);app.client.request(\"sessions.patch\",{key:nextKey,label:\"新会话 \"+new Date().toLocaleString()}).then(function(){var nextUrl=new URL(location.href);nextUrl.searchParams.set(\"session\",nextKey);location.assign(nextUrl.toString());}).catch(function(){if(typeof app.handleSendChat===\"function\"){app.handleSendChat(\"/new\",{restoreDraft:true});}});}' +
-                  'function wireNewSessionButton(){document.querySelectorAll(\"button\").forEach(function(btn){var label=normalizeSpace(btn.textContent||\"\");if(label!==\"New session\"&&label!==\"新建会话\"){return;}if(btn.dataset.anyclawNewBound===\"1\"){return;}btn.dataset.anyclawNewBound=\"1\";btn.addEventListener(\"click\",function(ev){try{ev.preventDefault();ev.stopPropagation();if(ev.stopImmediatePropagation){ev.stopImmediatePropagation();}}catch(_){}openNewSessionDirect();},true);if(isZh){replaceFirstTextNode(btn,\"新建会话\");}});}' +
-                  'function installBackButton(){if(document.getElementById(\"anyclaw-back-codex\")){return;}var btn=document.createElement(\"button\");btn.id=\"anyclaw-back-codex\";btn.type=\"button\";btn.textContent=isZh?\"返回 Codex\":\"Back to Codex\";btn.setAttribute(\"aria-label\",btn.textContent);btn.style.position=\"fixed\";btn.style.left=\"12px\";btn.style.top=\"12px\";btn.style.zIndex=\"2147483000\";btn.style.padding=\"8px 12px\";btn.style.borderRadius=\"10px\";btn.style.border=\"1px solid rgba(255,255,255,0.25)\";btn.style.background=\"rgba(17,24,39,0.85)\";btn.style.color=\"#fff\";btn.style.fontSize=\"13px\";btn.addEventListener(\"click\",function(){location.href=\"http://127.0.0.1:${serverPort}/?openclawGatewayPort=${openClawGatewayPort}&openclawControlUiPort=${openClawControlUiPort}\";});document.body.appendChild(btn);}' +
-                  'function installTraceToggle(){var id=\"anyclaw-trace-toggle\";var btn=document.getElementById(id);var u=new URL(location.href);var isSimple=u.searchParams.get(\"simple\")!==\"0\";if(!btn){btn=document.createElement(\"button\");btn.id=id;btn.type=\"button\";btn.style.position=\"fixed\";btn.style.left=\"12px\";btn.style.top=\"96px\";btn.style.zIndex=\"2147482998\";btn.style.padding=\"6px 10px\";btn.style.borderRadius=\"8px\";btn.style.border=\"1px solid rgba(255,255,255,0.25)\";btn.style.background=\"rgba(17,24,39,0.88)\";btn.style.color=\"#fff\";btn.style.fontSize=\"12px\";document.body.appendChild(btn);}btn.textContent=isZh?(isSimple?\"过程显示：关\":\"过程显示：开\"):(isSimple?\"Process view: off\":\"Process view: on\");btn.setAttribute(\"aria-label\",btn.textContent);btn.onclick=function(){var nextSimple=isSimple?\"0\":\"1\";settings.chatShowThinking=(nextSimple===\"0\");try{localStorage.setItem(settingsKey,JSON.stringify(settings));}catch(_){}var next=new URL(location.href);if(!next.searchParams.get(\"gatewayUrl\")){next.searchParams.set(\"gatewayUrl\",targetGateway);}if(settings.token&&!next.searchParams.get(\"token\")){next.searchParams.set(\"token\",settings.token);}next.searchParams.set(\"simple\",nextSimple);location.assign(next.toString());};}' +
+                  'function openNewSessionDirect(){var app=document.querySelector(\"openclaw-app\");if(!app||!app.client||!app.connected){return;}var nextKey=makeSessionKey(app.sessionKey);app.client.request(\"sessions.patch\",{key:nextKey,label:\"New session \"+new Date().toLocaleString()}).then(function(){var nextUrl=new URL(location.href);nextUrl.searchParams.set(\"session\",nextKey);location.assign(nextUrl.toString());}).catch(function(){if(typeof app.handleSendChat===\"function\"){app.handleSendChat(\"/new\",{restoreDraft:true});}});}' +
+                  'function wireNewSessionButton(){return;}' +
+                  'function installBackButton(){return;}' +
+                  'function installTraceToggle(){return;}' +
                   'function autoConfirmGatewayUrl(){var app=document.querySelector(\"openclaw-app\");if(!app||!app.pendingGatewayUrl||typeof app.handleGatewayUrlConfirm!==\"function\"){return;}var pending=String(app.pendingGatewayUrl||\"\").trim();if(isLoopback(pending)){try{app.handleGatewayUrlConfirm();}catch(_){}}}' +
                   'function safeRun(fn){try{fn();}catch(_){}}' +
                   'function runPatches(){safeRun(patchChatHistoryRequest);safeRun(localizeStatic);safeRun(wireNewSessionButton);safeRun(installBackButton);safeRun(installTraceToggle);safeRun(installHistoryControls);safeRun(autoConfirmGatewayUrl);}' +
@@ -2036,6 +2037,89 @@ WEOF
         return !output.contains("Not logged in", ignoreCase = true)
     }
 
+    private fun resetCodexAuthState(onProgress: (String) -> Unit): Boolean {
+        onProgress("Clearing stale Codex login state…")
+        val paths = BootstrapInstaller.getPaths(context)
+        val env = buildEnvironment(paths).toMutableMap()
+        env["HTTPS_PROXY"] = "http://127.0.0.1:$proxyPort"
+        env["HTTP_PROXY"] = "http://127.0.0.1:$proxyPort"
+
+        return try {
+            val pb = ProcessBuilder(codexBinPath(), "logout")
+            pb.environment().clear()
+            pb.environment().putAll(env)
+            pb.directory(File(paths.homeDir))
+            pb.redirectErrorStream(true)
+
+            val proc = pb.start()
+            val reader = BufferedReader(InputStreamReader(proc.inputStream))
+            var line = reader.readLine()
+            while (line != null) {
+                val clean = line.replace(Regex("\\x1b\\[[0-9;]*m"), "").trim()
+                if (clean.isNotEmpty()) {
+                    Log.d(TAG, "[logout] $clean")
+                    onProgress(clean)
+                }
+                line = reader.readLine()
+            }
+
+            val exitCode = proc.waitFor()
+            Log.i(TAG, "codex logout exited with code $exitCode")
+
+            val authJson = File(paths.homeDir, ".codex/auth.json")
+            if (authJson.exists() && !authJson.delete()) {
+                Log.w(TAG, "Failed to delete stale auth.json after logout")
+            }
+
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to reset Codex auth state", e)
+            false
+        }
+    }
+
+    private fun runLoginWithUrlAttempt(
+        onLoginUrl: (url: String) -> Unit,
+        onProgress: (String) -> Unit,
+    ): Boolean {
+        val paths = BootstrapInstaller.getPaths(context)
+        val env = buildEnvironment(paths).toMutableMap()
+        env["HTTPS_PROXY"] = "http://127.0.0.1:$proxyPort"
+        env["HTTP_PROXY"] = "http://127.0.0.1:$proxyPort"
+
+        val pb = ProcessBuilder(codexBinPath(), "login")
+        pb.environment().clear()
+        pb.environment().putAll(env)
+        pb.directory(File(paths.homeDir))
+        pb.redirectErrorStream(true)
+
+        val proc = pb.start()
+        val reader = BufferedReader(InputStreamReader(proc.inputStream))
+
+        val urlRegex = Regex("""(https://auth\.openai\.com/\S+)""")
+        var urlSent = false
+
+        var line = reader.readLine()
+        while (line != null) {
+            val clean = line.replace(Regex("\\x1b\\[[0-9;]*m"), "").trim()
+            Log.d(TAG, "[login] $clean")
+            onProgress(clean)
+
+            if (!urlSent) {
+                urlRegex.find(clean)?.let {
+                    onLoginUrl(it.value)
+                    urlSent = true
+                }
+            }
+
+            line = reader.readLine()
+        }
+
+        val exitCode = proc.waitFor()
+        Log.i(TAG, "codex login exited with code $exitCode")
+        return exitCode == 0
+    }
+
     /**
      * Pipe an API key into `codex login --with-api-key` via stdin.
      */
@@ -2079,42 +2163,13 @@ WEOF
         onLoginUrl: (url: String) -> Unit,
         onProgress: (String) -> Unit,
     ): Boolean {
-        val paths = BootstrapInstaller.getPaths(context)
-        val env = buildEnvironment(paths).toMutableMap()
-        env["HTTPS_PROXY"] = "http://127.0.0.1:$proxyPort"
-        env["HTTP_PROXY"] = "http://127.0.0.1:$proxyPort"
+        resetCodexAuthState(onProgress)
+        val firstAttemptOk = runLoginWithUrlAttempt(onLoginUrl, onProgress)
+        if (firstAttemptOk || isLoggedIn()) return true
 
-        val pb = ProcessBuilder(codexBinPath(), "login")
-        pb.environment().clear()
-        pb.environment().putAll(env)
-        pb.directory(File(paths.homeDir))
-        pb.redirectErrorStream(true)
-
-        val proc = pb.start()
-        val reader = BufferedReader(InputStreamReader(proc.inputStream))
-
-        val urlRegex = Regex("""(https://auth\.openai\.com/\S+)""")
-        var urlSent = false
-
-        var line = reader.readLine()
-        while (line != null) {
-            val clean = line.replace(Regex("\\x1b\\[[0-9;]*m"), "").trim()
-            Log.d(TAG, "[login] $clean")
-            onProgress(clean)
-
-            if (!urlSent) {
-                urlRegex.find(clean)?.let {
-                    onLoginUrl(it.value)
-                    urlSent = true
-                }
-            }
-
-            line = reader.readLine()
-        }
-
-        val exitCode = proc.waitFor()
-        Log.i(TAG, "codex login exited with code $exitCode")
-        return exitCode == 0
+        onProgress("Retrying browser login with a fresh auth state…")
+        resetCodexAuthState(onProgress)
+        return runLoginWithUrlAttempt(onLoginUrl, onProgress)
     }
 
     // ── Health check ────────────────────────────────────────────────────────
