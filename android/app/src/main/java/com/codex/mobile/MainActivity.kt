@@ -631,19 +631,42 @@ class MainActivity : AppCompatActivity() {
             updateStatus("Network proxy unavailable", "Continuing in reduced mode")
         }
 
-        // Step 5: Codex auth is optional. Do not block startup for OpenClaw-only users.
+        // Step 5: Require Codex auth before exposing chat or starting OpenClaw.
         updateStatus("Checking Codex authentication…")
-        val codexLoggedIn = serverManager.isLoggedIn()
-        if (!codexLoggedIn) {
-            updateStatus("Codex not logged in", "Continuing in OpenClaw mode")
-        } else {
-            // Keep startup fast and non-blocking even when Codex network is unavailable.
-            updateStatus("Codex authenticated")
+        if (!serverManager.isLoggedIn()) {
+            updateStatus("Login required — opening browser…")
+            val authOk = serverManager.loginWithUrl(
+                onLoginUrl = { url ->
+                    runOnUiThread {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
+                },
+                onProgress = { msg -> updateDetail(msg) },
+            )
+            if (!authOk && !serverManager.isLoggedIn()) {
+                updateStatus("Browser login failed — enter API key manually")
+                val apiKey = requestApiKey()
+                if (apiKey.isBlank()) {
+                    throw RuntimeException("No API key provided")
+                }
+                val loginOk = serverManager.loginWithApiKey(apiKey)
+                if (!loginOk) {
+                    throw RuntimeException("Login failed — check your API key")
+                }
+            }
         }
+        updateStatus("Codex authenticated")
 
-        // Step 7: Start OpenClaw services in background so Codex chat page remains
-        // available even if gateway/bootstrap has a transient failure.
-        startOpenClawServicesAsync()
+        // Step 6: Verify API access before continuing.
+        updateStatus("Verifying API access…", "Sending test message")
+        val healthOk = serverManager.healthCheck { msg -> updateDetail(msg) }
+        if (!healthOk) {
+            throw RuntimeException("API health check failed — Codex could not reach OpenAI")
+        }
+        updateStatus("API verified")
+
+        // Step 7: Start OpenClaw before loading the UI so failures are explicit.
+        startOpenClawServicesBlocking()
 
         // Step 8: Start web server
         updateStatus("Starting server…")
@@ -676,34 +699,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startOpenClawServicesAsync() {
+    private fun startOpenClawServicesBlocking() {
         if (!serverManager.isOpenClawInstalled()) return
-        Thread {
-            try {
-                updateStatus("Running OpenClaw preflight…")
-                serverManager.runOpenClawPreflight { msg -> updateDetail(msg) }
+        updateStatus("Running OpenClaw preflight…")
+        val preflightOk = serverManager.runOpenClawPreflight { msg -> updateDetail(msg) }
+        if (!preflightOk) {
+            throw RuntimeException("OpenClaw preflight failed")
+        }
 
-                updateStatus("Configuring OpenClaw…")
-                serverManager.configureOpenClawAuth()
+        updateStatus("Configuring OpenClaw…")
+        serverManager.configureOpenClawAuth()
 
-                updateStatus("Starting OpenClaw gateway…")
-                val gatewayOk = serverManager.startOpenClawGateway()
-                if (!gatewayOk) {
-                    Log.w(TAG, "OpenClaw gateway did not become responsive")
-                }
+        updateStatus("Starting OpenClaw gateway…")
+        val gatewayOk = serverManager.startOpenClawGateway()
+        if (!gatewayOk) {
+            throw RuntimeException("OpenClaw gateway did not become responsive")
+        }
 
-                updateStatus("Starting OpenClaw Control UI…")
-                serverManager.startOpenClawControlUiServer()
-            } catch (error: Exception) {
-                Log.e(TAG, "OpenClaw async startup failed", error)
-            } finally {
-                runOnUiThread {
-                    if (webView.visibility == View.VISIBLE) {
-                        refreshGatewayStatusAsync(announce = true)
-                    }
-                }
-            }
-        }.start()
+        updateStatus("Starting OpenClaw Control UI…")
+        val controlUiOk = serverManager.startOpenClawControlUiServer()
+        if (!controlUiOk) {
+            throw RuntimeException("OpenClaw Control UI failed to start")
+        }
     }
 
     private fun consumeLaunchUrlOrDefault(): String {
