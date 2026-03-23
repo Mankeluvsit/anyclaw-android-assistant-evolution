@@ -75,6 +75,17 @@ adb shell am start -n com.codex.mobile/.MainActivity
 
 Or [download the latest APK](https://friuns2.github.io/openclaw-android-assistant/) directly.
 
+### Termux local build
+
+If you are building on-device in Termux, the repo now includes a dedicated helper that installs the missing Android SDK pieces and forces the correct `aapt2` binary:
+
+```bash
+cd android
+bash scripts/build-termux-debug.sh
+```
+
+This avoids the common Termux failure where Gradle launches the Linux-host `aapt2` daemon instead of the Android SDK `build-tools/.../aapt2` binary.
+
 ---
 
 ## Architecture

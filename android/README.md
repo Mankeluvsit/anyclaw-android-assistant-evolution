@@ -39,6 +39,33 @@ Android APK that embeds a Termux-style Linux bootstrap environment, installs Ope
 
 ## Build Instructions
 
+### Termux local build
+
+For a repeatable on-device build inside Termux, use the checked-in helper:
+
+```bash
+cd android
+bash scripts/build-termux-debug.sh
+```
+
+What it does:
+
+- verifies `java`, `javac`, `node`, `npm`, and `sdkmanager`
+- installs Android SDK command-line tools if they are missing
+- installs `platform-tools`, `platforms;android-34`, and `build-tools;34.0.0`
+- writes `local.properties` with your Termux SDK path
+- forces Gradle to use the SDK `aapt2` binary instead of the incompatible Linux host binary that breaks on Termux
+- builds `app-debug.apk`
+- copies the APK to `/storage/emulated/0/Download/anyclaw-debug.apk` when shared storage is available
+
+Environment overrides:
+
+```bash
+ANYCLAW_ANDROID_BUILD_TOOLS=34.0.0
+ANYCLAW_ANDROID_PLATFORM=android-34
+ANYCLAW_DEBUG_APK_TARGET=/storage/emulated/0/Download/anyclaw-debug.apk
+```
+
 ### 1. Download the Termux bootstrap
 
 ```bash

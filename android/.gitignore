@@ -7,6 +7,8 @@ app/build/
 captures/
 .externalNativeBuild/
 .cxx/
+.gradle-user-home/
+.tmp/
 
 # Bootstrap archive (downloaded at build time, ~30MB)
 app/src/main/assets/bootstrap-*.zip
