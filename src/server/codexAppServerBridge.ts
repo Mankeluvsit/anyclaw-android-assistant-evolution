@@ -598,6 +598,31 @@ async function fetchGitHubHubSkills(): Promise<GitHubHubSkill[]> {
   return githubHubCache.items
 }
 
+async function readGitHubHubSkillDocument(owner: string, name: string): Promise<string> {
+  const candidates = [
+    `https://raw.githubusercontent.com/${GITHUB_HUB_OWNER}/${GITHUB_HUB_REPO}/main/skills/${owner}/${name}/SKILL.md`,
+    `https://raw.githubusercontent.com/${GITHUB_HUB_OWNER}/${GITHUB_HUB_REPO}/main/skills/${owner}/${name}/README.md`,
+  ]
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'AnyClaw-Debug/1.0' },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!response.ok) continue
+      const content = (await response.text()).trim()
+      if (content) {
+        return content
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return ''
+}
+
 async function installClawHubSkillToDisk(
   slug: string,
   version: string,
@@ -1377,6 +1402,19 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         }
 
         setJson(res, 200, { ok: true, name: installedEntry.name, path: installedEntry.path })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/readme') {
+        const owner = normalizeText(url.searchParams.get('owner'))
+        const name = normalizeText(url.searchParams.get('name'))
+        if (!owner || !name) {
+          setJson(res, 400, { error: 'Missing owner or name' })
+          return
+        }
+
+        const content = await readGitHubHubSkillDocument(owner, name)
+        setJson(res, 200, { content })
         return
       }
 

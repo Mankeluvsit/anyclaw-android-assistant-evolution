@@ -208,6 +208,27 @@
                 <span v-if="skill.version">{{ skill.version }}</span>
               </div>
             </button>
+            <div class="skills-hub-installed-actions skills-hub-card-actions">
+              <UiButton
+                size="sm"
+                variant="surface"
+                @click.stop="openSkill(skill.slug)"
+              >
+                {{ t('skills_hub_view_details') }}
+              </UiButton>
+              <UiButton
+                v-if="!installedClawHubSlugs.has(skill.slug)"
+                size="sm"
+                variant="solid"
+                :disabled="installingClawHubSlug === skill.slug"
+                @click.stop="installFromCard(skill.slug)"
+              >
+                {{ installingClawHubSlug === skill.slug ? t('skills_hub_install_pending') : t('skills_hub_install_action') }}
+              </UiButton>
+              <UiButton v-else size="sm" variant="ghost" disabled>
+                {{ t('skills_hub_installed_state') }}
+              </UiButton>
+            </div>
           </article>
         </div>
       </section>
@@ -223,29 +244,6 @@
             <h3 class="skills-hub-detail-title">{{ mobileSheetTitle }}</h3>
           </div>
         </header>
-        <section v-if="installedSkills.length > 0" class="skills-hub-section-card">
-          <header class="skills-hub-section-head">
-            <h4>{{ t('skills_hub_installed_label') }}</h4>
-            <span class="skills-hub-chip">{{ installedSkills.length }}</span>
-          </header>
-          <ul class="skills-hub-installed-list">
-            <li v-for="skill in installedSkills" :key="skill.path" class="skills-hub-installed-item">
-              <div>
-                <strong>{{ skill.name }}</strong>
-                <p>{{ skill.shortDescription || skill.description || skill.path }}</p>
-              </div>
-              <div class="skills-hub-installed-actions">
-                <UiButton size="sm" variant="ghost" :disabled="busyInstalledSkillPath === skill.path" @click="toggleInstalledSkill(skill)">
-                  {{ busyInstalledSkillPath === skill.path ? t('skills_hub_toggle_pending') : (skill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action')) }}
-                </UiButton>
-                <UiButton size="sm" variant="ghost" :disabled="busyInstalledSkillPath === skill.path" @click="removeInstalledSkill(skill)">
-                  {{ busyInstalledSkillPath === skill.path ? t('skills_hub_uninstall_pending') : t('skills_hub_uninstall_action') }}
-                </UiButton>
-              </div>
-            </li>
-          </ul>
-        </section>
-
         <div v-if="isDetailLoading" class="skills-hub-state">
           {{ t('skills_hub_detail_loading') }}
         </div>
@@ -378,6 +376,29 @@
             </ul>
           </section>
         </template>
+
+        <section v-if="installedSkills.length > 0" class="skills-hub-section-card">
+          <header class="skills-hub-section-head">
+            <h4>{{ t('skills_hub_installed_label') }}</h4>
+            <span class="skills-hub-chip">{{ installedSkills.length }}</span>
+          </header>
+          <ul class="skills-hub-installed-list">
+            <li v-for="skill in installedSkills" :key="skill.path" class="skills-hub-installed-item">
+              <div>
+                <strong>{{ skill.name }}</strong>
+                <p>{{ skill.shortDescription || skill.description || skill.path }}</p>
+              </div>
+              <div class="skills-hub-installed-actions">
+                <UiButton size="sm" variant="ghost" :disabled="busyInstalledSkillPath === skill.path" @click="toggleInstalledSkill(skill)">
+                  {{ busyInstalledSkillPath === skill.path ? t('skills_hub_toggle_pending') : (skill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action')) }}
+                </UiButton>
+                <UiButton size="sm" variant="ghost" :disabled="busyInstalledSkillPath === skill.path" @click="removeInstalledSkill(skill)">
+                  {{ busyInstalledSkillPath === skill.path ? t('skills_hub_uninstall_pending') : t('skills_hub_uninstall_action') }}
+                </UiButton>
+              </div>
+            </li>
+          </ul>
+        </section>
       </aside>
     </div>
   </section>
@@ -473,6 +494,18 @@ const ownerLabel = computed(() => {
 
 const selectedInstalledSkill = computed(() =>
   installedSkills.value.find((skill) => skill.name === selectedSlug.value) ?? null,
+)
+
+const installedClawHubSlugs = computed(() =>
+  new Set(
+    installedSkills.value.flatMap((skill) => {
+      const skillPath = skill.path.replace(/\\/gu, '/')
+      const match = /\/skills\/([^/]+)\/SKILL\.md$/u.exec(skillPath)
+      if (match?.[1]) return [match[1]]
+      if (skill.name) return [skill.name]
+      return []
+    }),
+  ),
 )
 
 const tagSummary = computed(() => {
@@ -595,6 +628,13 @@ async function installLatest(): Promise<void> {
     await openSkill(selectedDetail.value.skill.slug)
   } finally {
     installingClawHubSlug.value = ''
+  }
+}
+
+async function installFromCard(slug: string): Promise<void> {
+  await openSkill(slug)
+  if (selectedDetail.value?.skill.slug === slug) {
+    await installLatest()
   }
 }
 
@@ -945,6 +985,11 @@ onBeforeUnmount(() => {
   @apply min-w-0 overflow-hidden rounded-[1.1rem] border transition-colors duration-200;
   border-color: var(--border-subtle);
   background: color-mix(in srgb, var(--surface-base) 86%, transparent);
+}
+
+.skills-hub-card-actions {
+  @apply border-t px-4 pb-4 pt-0;
+  border-color: color-mix(in srgb, var(--border-subtle) 88%, transparent);
 }
 
 .skills-hub-card[data-active='true'] {
