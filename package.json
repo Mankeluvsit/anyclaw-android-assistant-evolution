@@ -48,12 +48,10 @@
   },
   "devDependencies": {
     "@rollup/wasm-node": "^4.59.0",
-    "@tailwindcss/oxide-android-arm64": "^4.2.1",
     "@tailwindcss/vite": "^4.1.18",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.2",
     "@vitejs/plugin-vue": "^5.2.1",
-    "lightningcss-android-arm64": "^1.31.1",
     "playwright": "^1.58.2",
     "tailwindcss": "^4.1.18",
     "tsup": "^8.4.0",
@@ -62,5 +60,9 @@
     "vue": "^3.5.13",
     "vue-router": "^4.6.4",
     "vue-tsc": "^2.2.0"
+  },
+  "optionalDependencies": {
+    "@tailwindcss/oxide-android-arm64": "^4.2.1",
+    "lightningcss-android-arm64": "^1.31.1"
   }
 }
