@@ -39,12 +39,17 @@ function saveSettings(value: UiSettings): void {
 const settings = ref<UiSettings>(loadSettings())
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY) return
+    settings.value = loadSettings()
+  })
+
   watch(
     settings,
     (value) => {
       saveSettings(value)
     },
-    { deep: true },
+    { deep: true, flush: 'sync' },
   )
 }
 
@@ -54,6 +59,7 @@ export function useUiSettings() {
       ...settings.value,
       pressEnterToSend: value,
     }
+    saveSettings(settings.value)
   }
 
   return {

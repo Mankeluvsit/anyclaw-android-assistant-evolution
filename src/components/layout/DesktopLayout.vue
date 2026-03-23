@@ -121,7 +121,7 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
 }
 
 .desktop-sidebar-compact {
-  @apply fixed inset-y-0 left-0 z-[80] w-[min(88vw,22rem)] max-w-[22rem] border-r;
+  @apply fixed inset-y-0 left-0 z-[80] w-[min(88vw,22rem)] max-w-[22rem] overflow-y-auto border-r;
   box-shadow: 24px 0 60px rgba(0, 0, 0, 0.32);
 }
 
@@ -151,11 +151,11 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
 
 @media (max-width: 960px) {
   .desktop-layout {
-    @apply block;
+    @apply block h-[100dvh];
   }
 
   .desktop-main {
-    @apply h-screen;
+    @apply h-[100dvh];
   }
 }
 </style>

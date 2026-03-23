@@ -629,7 +629,7 @@ onBeforeUnmount(() => {
 }
 
 .conversation-list-inner {
-  @apply m-0 flex min-h-full list-none flex-col gap-5 px-4 py-0 sm:px-6;
+  @apply m-0 flex min-h-full list-none flex-col gap-6 px-4 py-0 sm:px-6;
 }
 
 .conversation-scroll {
@@ -675,7 +675,7 @@ onBeforeUnmount(() => {
 }
 
 .message-stack {
-  @apply flex flex-col w-full;
+  @apply flex w-full flex-col gap-2;
 }
 
 .request-card {
@@ -818,11 +818,20 @@ onBeforeUnmount(() => {
 }
 
 .message-card {
-  @apply flex max-w-[min(76ch,100%)] flex-col gap-2 px-0 py-0 bg-transparent border-none rounded-none;
+  @apply flex max-w-[min(76ch,100%)] flex-col gap-3 px-0 py-0 bg-transparent border-none rounded-none;
 }
 
 .message-actions-inline {
-  @apply flex justify-end;
+  @apply flex pt-1;
+}
+
+.message-card[data-role='user'] .message-actions-inline {
+  @apply justify-end;
+}
+
+.message-card[data-role='assistant'] .message-actions-inline,
+.message-card[data-role='system'] .message-actions-inline {
+  @apply justify-start;
 }
 
 .message-action-trigger {
@@ -888,6 +897,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 960px) {
+  .conversation-list-inner {
+    @apply gap-4 px-3;
+  }
+
   .message-row {
     @apply max-w-full;
   }
@@ -896,6 +909,15 @@ onBeforeUnmount(() => {
   .message-card[data-role='system'],
   .message-card[data-role='user'] {
     max-width: min(100%, 42rem);
+  }
+
+  .message-card[data-role='assistant'],
+  .message-card[data-role='system'] {
+    @apply px-3.5 py-3;
+  }
+
+  .message-card[data-role='user'] {
+    @apply px-3.5 py-3;
   }
 }
 

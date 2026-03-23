@@ -19,8 +19,10 @@
         class="thread-composer-input"
         :placeholder="placeholderText"
         :disabled="disabled || !activeThreadId || isTurnInProgress"
+        :enterkeyhint="settings.pressEnterToSend ? 'send' : 'enter'"
         rows="1"
         @keydown="onComposerKeydown"
+        @beforeinput="onComposerBeforeInput"
         @input="onDraftInput"
       />
 
@@ -46,24 +48,23 @@
       </div>
 
       <div class="thread-composer-controls">
-        <input
-          ref="fileInputRef"
-          class="thread-composer-file-input"
-          type="file"
-          accept="image/*"
-          multiple
-          @change="onAttachmentInput"
-        />
-        <button
+        <label
           class="thread-composer-attach"
-          type="button"
+          :data-disabled="disabled || !activeThreadId || isTurnInProgress"
           :aria-label="t('composer_add_attachment')"
           :title="t('composer_add_attachment')"
-          :disabled="disabled || !activeThreadId || isTurnInProgress"
-          @click="openAttachmentPicker"
         >
+          <input
+            ref="fileInputRef"
+            class="thread-composer-file-input"
+            type="file"
+            accept="image/*"
+            multiple
+            :disabled="disabled || !activeThreadId || isTurnInProgress"
+            @change="onAttachmentInput"
+          />
           <IconTablerPaperclip class="thread-composer-attach-icon" />
-        </button>
+        </label>
 
         <ComposerDropdown
           class="thread-composer-control"
@@ -150,7 +151,6 @@ const emit = defineEmits<{
 
 const draft = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<ComposerImageAttachment[]>([])
 const reasoningOptions = computed<Array<{ value: ReasoningEffort; label: string }>>(() => [
   { value: 'none', label: t('thinking_none') },
@@ -192,10 +192,6 @@ function onInterrupt(): void {
 
 function onCancelEdit(): void {
   emit('cancelEdit')
-}
-
-function openAttachmentPicker(): void {
-  fileInputRef.value?.click()
 }
 
 function onModelSelect(value: string): void {
@@ -248,6 +244,14 @@ function onDraftInput(): void {
 
 function onComposerKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.stopPropagation()
+  if (!settings.value.pressEnterToSend) return
+  event.preventDefault()
+  onSubmit()
+}
+
+function onComposerBeforeInput(event: InputEvent): void {
+  if (event.inputType !== 'insertLineBreak') return
   if (!settings.value.pressEnterToSend) return
   event.preventDefault()
   onSubmit()
@@ -330,9 +334,6 @@ watch(
   () => {
     revokeAttachmentUrls()
     attachments.value = []
-    if (fileInputRef.value) {
-      fileInputRef.value.value = ''
-    }
   },
 )
 </script>
@@ -454,7 +455,7 @@ watch(
 }
 
 .thread-composer-attach {
-  @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 transition-colors duration-200 disabled:cursor-not-allowed;
+  @apply inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 transition-colors duration-200;
   background: var(--surface-hover);
   color: var(--text-default);
 }
@@ -463,8 +464,10 @@ watch(
   background: color-mix(in srgb, var(--surface-hover) 82%, white);
 }
 
-.thread-composer-attach:disabled {
+.thread-composer-attach[data-disabled='true'] {
+  cursor: not-allowed;
   color: var(--text-muted);
+  pointer-events: none;
 }
 
 .thread-composer-attach-icon {

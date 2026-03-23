@@ -323,6 +323,15 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             return false
         }
+        if (uri.scheme.equals("anyclaw", ignoreCase = true)) {
+            val host = (uri.host ?: "").lowercase()
+            val path = (uri.path ?: "/").lowercase()
+            if (host == "openclaw" && path == "/restart") {
+                restartOpenClawFromWeb()
+                return true
+            }
+            return false
+        }
         val host = (uri.host ?: "").lowercase()
         if (host != "127.0.0.1" && host != "localhost") return false
         val port = if (uri.port > 0) uri.port else -1
@@ -332,6 +341,21 @@ class MainActivity : AppCompatActivity() {
         val session = uri.getQueryParameter("session")
         webView.loadUrl(buildOpenClawChatUrl(session))
         return true
+    }
+
+    private fun restartOpenClawFromWeb() {
+        Toast.makeText(this, "Restarting OpenClaw…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val ok = serverManager.reconnectOpenClawGateway()
+            runOnUiThread {
+                if (ok) {
+                    Toast.makeText(this, "OpenClaw restarted.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "OpenClaw restart failed.", Toast.LENGTH_LONG).show()
+                }
+                refreshGatewayStatusAsync(announce = false)
+            }
+        }.start()
     }
 
     private fun buildCodexRootUrl(): String {

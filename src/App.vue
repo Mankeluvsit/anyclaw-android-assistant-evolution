@@ -51,6 +51,17 @@
           </button>
         </div>
 
+        <button
+          v-if="!isSidebarCollapsed"
+          class="sidebar-skills-link"
+          :class="{ 'sidebar-skills-link-active': isSkillsRoute }"
+          type="button"
+          @click="openSkillsHub"
+        >
+          <span class="sidebar-skills-link-title">{{ t('skills_hub_nav_label') }}</span>
+          <span class="sidebar-skills-link-meta">{{ t('skills_hub_nav_meta') }}</span>
+        </button>
+
         <SidebarThreadTree :groups="projectGroups" :project-display-name-by-id="projectDisplayNameById"
           v-if="!isSidebarCollapsed"
           :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
@@ -95,7 +106,7 @@
           </template>
           <template #actions>
             <UiButton
-              v-if="!isHomeRoute"
+              v-if="!isHomeRoute && !isSkillsRoute"
               class="header-search-button"
               size="icon"
               variant="surface"
@@ -139,7 +150,10 @@
         </div>
 
         <section class="content-body">
-          <template v-if="isHomeRoute">
+          <template v-if="isSkillsRoute">
+            <SkillsHub />
+          </template>
+          <template v-else-if="isHomeRoute">
             <div class="content-grid">
               <div class="new-thread-empty">
                 <p class="new-thread-hero">{{ t('home_hero') }}</p>
@@ -295,6 +309,9 @@
           <div class="workflow-actions">
             <UiButton variant="surface" size="sm" @click="refreshOpenClawDashboardStatus">
               {{ t('dashboard_refresh_status') }}
+            </UiButton>
+            <UiButton variant="surface" size="sm" @click="restartOpenClawServices">
+              {{ t('dashboard_restart') }}
             </UiButton>
             <UiButton variant="surface" size="sm" @click="openOpenClawDashboard">
               {{ t('dashboard_open') }}
@@ -509,6 +526,7 @@ import SidebarThreadTree from './components/sidebar/SidebarThreadTree.vue'
 import ContentHeader from './components/content/ContentHeader.vue'
 import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
+import SkillsHub from './components/content/SkillsHub.vue'
 import ApiMethodsPanel from './components/content/ApiMethodsPanel.vue'
 import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
@@ -714,7 +732,9 @@ const knownThreadIdSet = computed(() => {
 })
 
 const isHomeRoute = computed(() => route.name === 'home')
+const isSkillsRoute = computed(() => route.name === 'skills')
 const contentTitle = computed(() => {
+  if (isSkillsRoute.value) return t('skills_hub_title')
   if (isHomeRoute.value) return t('content_new_thread')
   return selectedThread.value?.title ?? t('content_choose_thread')
 })
@@ -844,6 +864,14 @@ function onSelectThread(threadId: string): void {
 
 function onArchiveThread(threadId: string): void {
   void archiveThreadById(threadId)
+}
+
+function openSkillsHub(): void {
+  if (isCompactViewport.value) {
+    setSidebarCollapsed(true)
+  }
+  if (isSkillsRoute.value) return
+  void router.push({ name: 'skills' })
 }
 
 function onStartNewThread(projectName: string): void {
@@ -1067,6 +1095,17 @@ async function openOpenClawDashboard(): Promise<void> {
   if (typeof window !== 'undefined') {
     window.location.assign(openClawDashboardUrl.value)
   }
+}
+
+async function restartOpenClawServices(): Promise<void> {
+  dashboardStatusMessage.value = t('dashboard_restart_pending')
+  if (typeof window !== 'undefined') {
+    window.location.assign('anyclaw://openclaw/restart')
+  }
+  window.setTimeout(() => {
+    void refreshOpenClawDashboardStatus()
+    void refreshOpenClawRuntimeDiagnostics()
+  }, 1800)
 }
 
 function saveCurrentView(): void {
@@ -1422,6 +1461,10 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
       return
     }
 
+    if (route.name === 'skills') {
+      return
+    }
+
   } finally {
     isRouteSyncInProgress.value = false
   }
@@ -1447,7 +1490,7 @@ watch(
   async (threadId) => {
     if (!hasInitialized.value) return
     if (isRouteSyncInProgress.value) return
-    if (isHomeRoute.value) return
+    if (isHomeRoute.value || isSkillsRoute.value) return
 
     if (!threadId) {
       if (route.name !== 'home') {
@@ -1520,6 +1563,28 @@ async function submitFirstMessageForNewThread(
 .sidebar-root input,
 .sidebar-root textarea {
   @apply select-text;
+}
+
+.sidebar-skills-link {
+  @apply flex w-full flex-col items-start gap-1 rounded-[1rem] border px-3 py-3 text-left transition-colors duration-200;
+  border-color: color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 86%, transparent);
+}
+
+.sidebar-skills-link:hover,
+.sidebar-skills-link-active {
+  border-color: color-mix(in srgb, var(--accent-primary) 48%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-elevated));
+}
+
+.sidebar-skills-link-title {
+  @apply text-sm font-semibold;
+  color: var(--text-default);
+}
+
+.sidebar-skills-link-meta {
+  @apply text-xs;
+  color: var(--text-muted);
 }
 
 .content-root {

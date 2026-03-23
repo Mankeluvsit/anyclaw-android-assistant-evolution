@@ -10,6 +10,7 @@ const homeDir = process.env.HOME ?? ''
 const promptInjectionPath = homeDir ? join(homeDir, '.openclaw-android', 'state', 'prompt-injection.json') : ''
 const shizukuStatusPath = homeDir ? join(homeDir, '.openclaw-android', 'capabilities', 'shizuku.json') : ''
 const openClawStateDir = homeDir ? join(homeDir, '.openclaw-android', 'state') : ''
+const clawHubBaseUrl = (process.env.CLAWHUB_BASE_URL?.trim() || 'https://clawhub.ai').replace(/\/+$/u, '')
 
 type JsonRpcCall = {
   jsonrpc: '2.0'
@@ -140,6 +141,39 @@ async function probeLoopbackHttp(port: number, path = '/'): Promise<{ ok: boolea
 
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizePositiveInteger(value: string, fallback: number, max: number): number {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.min(max, parsed)
+}
+
+async function fetchClawHubJson(path: string, params: URLSearchParams): Promise<unknown> {
+  const target = new URL(`${clawHubBaseUrl}${path}`)
+  target.search = params.toString()
+
+  const response = await fetch(target, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(8000),
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'AnyClaw-Debug/1.0',
+    },
+  })
+
+  if (!response.ok) {
+    const fallback = `ClawHub request failed with HTTP ${String(response.status)}`
+    let detail = ''
+    try {
+      detail = (await response.text()).trim()
+    } catch {
+      detail = ''
+    }
+    throw new Error(detail || fallback)
+  }
+
+  return response.json()
 }
 
 function buildCapabilitySummary(statusRecord: Record<string, unknown> | null): string {
@@ -699,6 +733,68 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           gatewayLog,
           controlUiLog,
         })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/search') {
+        const query = normalizeText(url.searchParams.get('q'))
+        if (!query) {
+          setJson(res, 200, { results: [] })
+          return
+        }
+
+        const limit = normalizePositiveInteger(url.searchParams.get('limit') ?? '', 18, 40)
+        const params = new URLSearchParams({
+          q: query,
+          limit: String(limit),
+        })
+        const payload = await fetchClawHubJson('/api/v1/search', params)
+        setJson(res, 200, payload)
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/skill') {
+        const slug = normalizeText(url.searchParams.get('slug'))
+        if (!slug) {
+          setJson(res, 400, { error: 'Missing slug' })
+          return
+        }
+
+        const payload = await fetchClawHubJson(`/api/v1/skills/${encodeURIComponent(slug)}`, new URLSearchParams())
+        setJson(res, 200, payload)
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/versions') {
+        const slug = normalizeText(url.searchParams.get('slug'))
+        if (!slug) {
+          setJson(res, 400, { error: 'Missing slug' })
+          return
+        }
+
+        const limit = normalizePositiveInteger(url.searchParams.get('limit') ?? '', 6, 20)
+        const params = new URLSearchParams({ limit: String(limit) })
+        const payload = await fetchClawHubJson(`/api/v1/skills/${encodeURIComponent(slug)}/versions`, params)
+        setJson(res, 200, payload)
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/download-url') {
+        const slug = normalizeText(url.searchParams.get('slug'))
+        const version = normalizeText(url.searchParams.get('version'))
+        const tag = normalizeText(url.searchParams.get('tag')) || 'latest'
+        if (!slug) {
+          setJson(res, 400, { error: 'Missing slug' })
+          return
+        }
+
+        const params = new URLSearchParams({ slug })
+        if (version) {
+          params.set('version', version)
+        } else {
+          params.set('tag', tag)
+        }
+        setJson(res, 200, { url: `${clawHubBaseUrl}/api/v1/download?${params.toString()}` })
         return
       }
 
