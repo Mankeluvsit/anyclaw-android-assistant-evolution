@@ -577,7 +577,7 @@ async function fetchGitHubHubSkills(): Promise<GitHubHubSkill[]> {
     }
 
     const displayName = normalizeText(meta?.displayName) || name
-    const description = normalizeText(meta?.description) || displayName
+    const description = normalizeText(meta?.description)
     const latest = asRecord(meta?.latest)
     const publishedAt = typeof latest?.publishedAt === 'number' ? latest.publishedAt : 0
 

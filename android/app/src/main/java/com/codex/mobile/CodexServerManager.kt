@@ -1522,7 +1522,7 @@ H3
         return false
     }
 
-    private fun waitForOpenClawGatewayReady(timeoutMs: Long = 12_000): Boolean {
+    private fun waitForOpenClawGatewayReady(timeoutMs: Long = 20_000): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             val proc = openClawGatewayProcess
@@ -1890,8 +1890,15 @@ H3
         writeOpenClawStatus(paths, "control-ui-status.json", "starting", "Restarting OpenClaw control UI")
         configureOpenClawAuth()
         val gatewayOk = startOpenClawGateway()
-        if (!gatewayOk) return false
         val controlUiOk = startOpenClawControlUiServer()
+        if (!gatewayOk) {
+            writeOpenClawStatus(
+                paths,
+                "gateway-status.json",
+                "offline",
+                "Gateway restart is still unhealthy; control UI restart attempted anyway",
+            )
+        }
         if (!controlUiOk) {
             writeOpenClawStatus(
                 paths,
@@ -1900,7 +1907,7 @@ H3
                 "Gateway restarted, but control UI did not become ready",
             )
         }
-        return gatewayOk && controlUiOk
+        return gatewayOk || controlUiOk
     }
 
     private fun ensureHeartbeatBootstrap() {
