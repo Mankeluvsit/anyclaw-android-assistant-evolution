@@ -121,13 +121,16 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
 }
 
 .desktop-sidebar-compact {
-  @apply fixed inset-y-0 left-0 z-[80] w-[min(88vw,22rem)] max-w-[22rem] overflow-y-auto border-r;
+  @apply fixed inset-y-0 left-0 z-[80] w-[min(92vw,24rem)] max-w-[24rem] overflow-y-auto border-r overscroll-contain;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   box-shadow: 24px 0 60px rgba(0, 0, 0, 0.32);
 }
 
 .desktop-mobile-backdrop {
   @apply fixed inset-0 z-[70] border-0;
-  background: rgba(0, 0, 0, 0.48);
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(6px);
 }
 
 .desktop-resize-handle {

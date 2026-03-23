@@ -62,6 +62,17 @@
           <span class="sidebar-skills-link-meta">{{ t('skills_hub_nav_meta') }}</span>
         </button>
 
+        <button
+          v-if="!isSidebarCollapsed"
+          class="sidebar-skills-link"
+          :class="{ 'sidebar-skills-link-active': isSettingsRoute }"
+          type="button"
+          @click="openGlobalSettings"
+        >
+          <span class="sidebar-skills-link-title">{{ t('settings_label') }}</span>
+          <span class="sidebar-skills-link-meta">{{ t('settings_nav_meta') }}</span>
+        </button>
+
         <SidebarThreadTree :groups="projectGroups" :project-display-name-by-id="projectDisplayNameById"
           v-if="!isSidebarCollapsed"
           :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
@@ -82,6 +93,7 @@
             <span class="openclaw-dashboard-meta">
               {{ openClawDashboardStatus.ok ? t('dashboard_status_online') : t('dashboard_status_offline') }}
             </span>
+            <span class="openclaw-dashboard-version">Codex UI vNext</span>
           </span>
         </button>
       </section>
@@ -89,7 +101,7 @@
 
     <template #content>
       <section class="content-root">
-        <ContentHeader :title="contentTitle" build-badge="Codex UI vNext">
+        <ContentHeader :title="contentTitle">
           <template #leading>
             <SidebarThreadControls
               v-if="isSidebarCollapsed"
@@ -117,11 +129,12 @@
               <IconTablerSearch class="header-settings-icon" />
             </UiButton>
             <UiButton
+              v-if="!isHomeRoute && !isSkillsRoute && !isSettingsRoute"
               class="header-settings-button"
               size="icon"
               variant="surface"
-              :aria-label="t('settings_open')"
-              :title="t('settings_open')"
+              :aria-label="t('settings_thread_label')"
+              :title="t('settings_thread_label')"
               @click="isSettingsPanelOpen = true"
             >
               <IconTablerSettings class="header-settings-icon" />
@@ -129,7 +142,7 @@
           </template>
         </ContentHeader>
 
-        <div v-if="!isHomeRoute && isThreadSearchVisible" class="thread-search-bar">
+        <div v-if="!isHomeRoute && !isSkillsRoute && !isSettingsRoute && isThreadSearchVisible" class="thread-search-bar">
           <IconTablerSearch class="thread-search-bar-icon" />
           <input
             v-model="threadSearchQuery"
@@ -150,16 +163,199 @@
         </div>
 
         <section class="content-body">
-          <template v-if="isSkillsRoute">
+          <template v-if="isSettingsRoute">
+            <section class="global-settings-view">
+              <header class="global-settings-hero">
+                <div>
+                  <p class="global-settings-eyebrow">{{ t('settings_label') }}</p>
+                  <h2 class="global-settings-title">{{ t('settings_label') }}</h2>
+                  <p class="global-settings-subtitle">{{ t('settings_global_subtitle') }}</p>
+                </div>
+              </header>
+
+              <div class="global-settings-grid">
+                <section class="settings-section settings-section-page">
+                  <header class="settings-page-section-head">
+                    <div>
+                      <p class="settings-section-label">{{ t('settings_group_interface') }}</p>
+                    </div>
+                  </header>
+                  <div class="settings-section-content">
+                    <ThemeSwitcher
+                      :model-value="themePreference"
+                      @update:model-value="onThemePreferenceChange"
+                    />
+                    <label class="ui-locale-label">{{ t('app_language') }}</label>
+                    <UiSelect
+                      :model-value="localePreference"
+                      :options="localeOptions"
+                      @update:model-value="onLocalePreferenceChange"
+                    />
+                  </div>
+                </section>
+
+                <section class="settings-section settings-section-page">
+                  <header class="settings-page-section-head">
+                    <div>
+                      <p class="settings-section-label">{{ t('settings_group_conversation') }}</p>
+                    </div>
+                  </header>
+                  <div class="settings-section-content">
+                    <UiSwitch
+                      :model-value="isAutoRefreshEnabled"
+                      :label="t('settings_auto_refresh_label')"
+                      :description="t('settings_auto_refresh_description')"
+                      @update:model-value="onAutoRefreshSwitchChange"
+                    />
+                    <UiSwitch
+                      :model-value="settings.pressEnterToSend"
+                      :label="t('settings_enter_to_send_label')"
+                      :description="t('settings_enter_to_send_description')"
+                      @update:model-value="onPressEnterToSendChange"
+                    />
+                  </div>
+                </section>
+
+                <section class="settings-section settings-section-page">
+                  <header class="settings-page-section-head">
+                    <div>
+                      <p class="settings-section-label">{{ t('settings_group_openclaw') }}</p>
+                    </div>
+                  </header>
+                  <div class="settings-section-content">
+                    <article class="debug-status-card" :data-state="openClawDashboardStatus.ok ? 'online' : 'offline'">
+                      <p class="diagnostics-label">{{ t('openclaw_dashboard_label') }}</p>
+                      <p class="diagnostics-value">
+                        {{ openClawDashboardStatus.ok ? t('dashboard_status_online') : t('dashboard_status_offline') }}
+                      </p>
+                      <p class="debug-status-detail">{{ openClawDashboardStatus.detail || t('dashboard_status_unknown') }}</p>
+                    </article>
+                    <div class="workflow-actions">
+                      <UiButton variant="surface" size="sm" @click="refreshOpenClawDashboardStatus">
+                        {{ t('dashboard_refresh_status') }}
+                      </UiButton>
+                      <UiButton variant="surface" size="sm" @click="restartOpenClawServices">
+                        {{ t('dashboard_restart') }}
+                      </UiButton>
+                      <UiButton variant="surface" size="sm" @click="openOpenClawDashboard">
+                        {{ t('dashboard_open') }}
+                      </UiButton>
+                    </div>
+                    <p v-if="dashboardStatusMessage" class="workflow-status-message">{{ dashboardStatusMessage }}</p>
+                  </div>
+                </section>
+
+                <section class="settings-section settings-section-page settings-section-page-wide">
+                  <header class="settings-page-section-head">
+                    <div>
+                      <p class="settings-section-label">{{ t('settings_group_runtime') }}</p>
+                    </div>
+                    <UiButton variant="surface" size="sm" class="diagnostics-refresh-button" @click="refreshDiagnostics">
+                      {{ t('diagnostics_refresh') }}
+                    </UiButton>
+                  </header>
+                  <div class="settings-section-content">
+                    <p v-if="diagnosticsError" class="diagnostics-error">{{ diagnosticsError }}</p>
+                    <div class="diagnostics-summary-grid">
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_active_thread') }}</p>
+                        <p class="diagnostics-value">{{ selectedThreadId || t('diagnostics_none') }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_model') }}</p>
+                        <p class="diagnostics-value">{{ selectedModelId || t('diagnostics_none') }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_reasoning') }}</p>
+                        <p class="diagnostics-value">{{ selectedReasoningEffort || t('diagnostics_none') }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_requests') }}</p>
+                        <p class="diagnostics-value">{{ selectedThreadServerRequests.length }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_stream') }}</p>
+                        <p class="diagnostics-value">{{ connectionHealth.notificationStreamConnected ? t('diagnostics_connected') : t('diagnostics_disconnected') }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_last_event') }}</p>
+                        <p class="diagnostics-value">{{ formattedLastNotificationAt }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('diagnostics_last_sync') }}</p>
+                        <p class="diagnostics-value">{{ formattedLastSyncAt }}</p>
+                      </article>
+                      <article class="diagnostics-card diagnostics-card-wide">
+                        <p class="diagnostics-label">{{ t('diagnostics_current_error') }}</p>
+                        <p class="diagnostics-value diagnostics-value-wrap">{{ error || t('diagnostics_none') }}</p>
+                      </article>
+                    </div>
+                    <div class="diagnostics-summary-grid">
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('openclaw_gateway_status_label') }}</p>
+                        <p class="diagnostics-value">{{ String(openClawRuntimeDiagnostics.gatewayStatus?.state ?? t('diagnostics_none')) }}</p>
+                        <p class="diagnostics-inline-detail">{{ String(openClawRuntimeDiagnostics.gatewayStatus?.detail ?? '') }}</p>
+                      </article>
+                      <article class="diagnostics-card">
+                        <p class="diagnostics-label">{{ t('openclaw_control_ui_status_label') }}</p>
+                        <p class="diagnostics-value">{{ String(openClawRuntimeDiagnostics.controlUiStatus?.state ?? t('diagnostics_none')) }}</p>
+                        <p class="diagnostics-inline-detail">{{ String(openClawRuntimeDiagnostics.controlUiStatus?.detail ?? '') }}</p>
+                      </article>
+                    </div>
+                    <div v-if="openClawRuntimeDiagnostics.gatewayLog" class="diagnostics-log-block">
+                      <p class="diagnostics-log-title">{{ t('openclaw_gateway_log_label') }}</p>
+                      <pre class="diagnostics-log-pre">{{ openClawRuntimeDiagnostics.gatewayLog }}</pre>
+                    </div>
+                    <div v-if="openClawRuntimeDiagnostics.controlUiLog" class="diagnostics-log-block">
+                      <p class="diagnostics-log-title">{{ t('openclaw_control_ui_log_label') }}</p>
+                      <pre class="diagnostics-log-pre">{{ openClawRuntimeDiagnostics.controlUiLog }}</pre>
+                    </div>
+                    <div v-if="diagnosticErrors.length > 0" class="diagnostics-log-block">
+                      <p class="diagnostics-log-title">{{ t('diagnostics_errors') }}</p>
+                      <article
+                        v-for="entry in diagnosticErrors"
+                        :key="entry.id"
+                        class="diagnostics-log-entry diagnostics-log-entry-error"
+                      >
+                        <div class="diagnostics-log-row">
+                          <p class="diagnostics-log-heading">{{ entry.title }}</p>
+                          <span class="diagnostics-log-time">{{ formatDiagnosticsTime(entry.atIso) }}</span>
+                        </div>
+                        <p class="diagnostics-log-detail">{{ entry.detail }}</p>
+                      </article>
+                    </div>
+                    <div v-if="diagnosticEvents.length > 0" class="diagnostics-log-block">
+                      <p class="diagnostics-log-title">{{ t('diagnostics_events') }}</p>
+                      <article
+                        v-for="entry in diagnosticEvents"
+                        :key="entry.id"
+                        class="diagnostics-log-entry"
+                      >
+                        <div class="diagnostics-log-row">
+                          <p class="diagnostics-log-heading">{{ entry.title }}</p>
+                          <span class="diagnostics-log-time">{{ formatDiagnosticsTime(entry.atIso) }}</span>
+                        </div>
+                        <p class="diagnostics-log-detail">{{ entry.detail }}</p>
+                      </article>
+                    </div>
+                    <ApiMethodsPanel :methods="rpcMethodCatalog" :is-loading="isDiagnosticsLoading" />
+                    <ApiMethodsPanel :methods="rpcNotificationCatalog" :is-loading="isDiagnosticsLoading" />
+                  </div>
+                </section>
+              </div>
+            </section>
+          </template>
+          <template v-else-if="isSkillsRoute">
             <SkillsHub />
           </template>
           <template v-else-if="isHomeRoute">
             <div class="content-grid">
               <div class="new-thread-empty">
                 <p class="new-thread-hero">{{ t('home_hero') }}</p>
-                <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadCwd"
-                  :options="newThreadFolderOptions" :placeholder="t('home_choose_folder')"
-                  :disabled="newThreadFolderOptions.length === 0" @update:model-value="onSelectNewThreadFolder" />
+                <NewThreadProjectPicker class="new-thread-project-picker" :model-value="newThreadCwd"
+                  :options="newThreadFolderOptions" :default-root="workspaceDefaultRoot"
+                  :is-creating="isCreatingWorkspace" :create-error="workspaceCreateError"
+                  @update:model-value="onSelectNewThreadFolder" @create-project="onCreateWorkspace" />
                 <p class="new-thread-guide">{{ t('home_quick_guide') }}</p>
               </div>
 
@@ -212,49 +408,11 @@
 
   <SettingsPanel
     :open="isSettingsPanelOpen"
-    :title="t('settings_label')"
+    :title="t('settings_thread_label')"
     @update:open="isSettingsPanelOpen = $event"
     @close="isSettingsPanelOpen = false"
   >
-    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['appearance', 'behavior', 'project', 'workflow', 'debug', 'diagnostics']">
-      <AccordionItem class="settings-section" value="appearance">
-        <AccordionHeader>
-          <AccordionTrigger class="settings-section-trigger">
-            <span class="settings-section-label">{{ t('settings_section_appearance') }}</span>
-            <IconTablerChevronDown class="settings-section-chevron" />
-          </AccordionTrigger>
-        </AccordionHeader>
-        <AccordionContent class="settings-section-content">
-          <ThemeSwitcher
-            :model-value="themePreference"
-            @update:model-value="onThemePreferenceChange"
-          />
-        </AccordionContent>
-      </AccordionItem>
-
-      <AccordionItem class="settings-section" value="behavior">
-        <AccordionHeader>
-          <AccordionTrigger class="settings-section-trigger">
-            <span class="settings-section-label">{{ t('settings_section_behavior') }}</span>
-            <IconTablerChevronDown class="settings-section-chevron" />
-          </AccordionTrigger>
-        </AccordionHeader>
-        <AccordionContent class="settings-section-content">
-          <UiSwitch
-            :model-value="isAutoRefreshEnabled"
-            :label="t('settings_auto_refresh_label')"
-            :description="t('settings_auto_refresh_description')"
-            @update:model-value="onAutoRefreshSwitchChange"
-          />
-          <UiSwitch
-            :model-value="settings.pressEnterToSend"
-            :label="t('settings_enter_to_send_label')"
-            :description="t('settings_enter_to_send_description')"
-            @update:model-value="onPressEnterToSendChange"
-          />
-        </AccordionContent>
-      </AccordionItem>
-
+    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['project', 'workflow']">
       <AccordionItem class="settings-section" value="project">
         <AccordionHeader>
           <AccordionTrigger class="settings-section-trigger">
@@ -263,6 +421,40 @@
           </AccordionTrigger>
         </AccordionHeader>
         <AccordionContent class="settings-section-content">
+          <div class="diagnostics-summary-grid">
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('thread_settings_thread_id') }}</p>
+              <p class="diagnostics-value">{{ selectedThreadId || t('diagnostics_none') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('thread_settings_project') }}</p>
+              <p class="diagnostics-value">{{ activeProjectName || t('diagnostics_none') }}</p>
+            </article>
+            <article class="diagnostics-card diagnostics-card-wide">
+              <p class="diagnostics-label">{{ t('thread_settings_workspace') }}</p>
+              <p class="diagnostics-value diagnostics-value-wrap">{{ selectedThread?.cwd || t('diagnostics_none') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('thread_settings_status') }}</p>
+              <p class="diagnostics-value">{{ isSelectedThreadInProgress ? t('thread_settings_status_in_progress') : t('thread_settings_status_idle') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('thread_settings_pending_requests') }}</p>
+              <p class="diagnostics-value">{{ selectedThreadServerRequests.length }}</p>
+            </article>
+          </div>
+          <label class="ui-locale-label">{{ t('thread_settings_model') }}</label>
+          <UiSelect
+            :model-value="selectedModelId"
+            :options="sessionModelOptions"
+            @update:model-value="onSelectModel"
+          />
+          <label class="ui-locale-label">{{ t('thread_settings_reasoning') }}</label>
+          <UiSelect
+            :model-value="selectedReasoningEffort || PROJECT_NONE_OPTION"
+            :options="sessionReasoningOptions"
+            @update:model-value="onThreadReasoningChange"
+          />
           <p class="diagnostics-label">{{ activeProjectName || t('diagnostics_none') }}</p>
           <label class="ui-locale-label">{{ t('project_default_model_label') }}</label>
           <UiSelect
@@ -288,36 +480,6 @@
           <UiButton variant="surface" size="sm" @click="applyActiveProjectDefaults">
             {{ t('project_apply_defaults') }}
           </UiButton>
-        </AccordionContent>
-      </AccordionItem>
-
-      <AccordionItem class="settings-section" value="debug">
-        <AccordionHeader>
-          <AccordionTrigger class="settings-section-trigger">
-            <span class="settings-section-label">{{ t('settings_section_debug') }}</span>
-            <IconTablerChevronDown class="settings-section-chevron" />
-          </AccordionTrigger>
-        </AccordionHeader>
-        <AccordionContent class="settings-section-content">
-          <article class="debug-status-card" :data-state="openClawDashboardStatus.ok ? 'online' : 'offline'">
-            <p class="diagnostics-label">{{ t('openclaw_dashboard_label') }}</p>
-            <p class="diagnostics-value">
-              {{ openClawDashboardStatus.ok ? t('dashboard_status_online') : t('dashboard_status_offline') }}
-            </p>
-            <p class="debug-status-detail">{{ openClawDashboardStatus.detail || t('dashboard_status_unknown') }}</p>
-          </article>
-          <div class="workflow-actions">
-            <UiButton variant="surface" size="sm" @click="refreshOpenClawDashboardStatus">
-              {{ t('dashboard_refresh_status') }}
-            </UiButton>
-            <UiButton variant="surface" size="sm" @click="restartOpenClawServices">
-              {{ t('dashboard_restart') }}
-            </UiButton>
-            <UiButton variant="surface" size="sm" @click="openOpenClawDashboard">
-              {{ t('dashboard_open') }}
-            </UiButton>
-          </div>
-          <p v-if="dashboardStatusMessage" class="workflow-status-message">{{ dashboardStatusMessage }}</p>
         </AccordionContent>
       </AccordionItem>
 
@@ -397,121 +559,6 @@
         </AccordionContent>
       </AccordionItem>
 
-      <AccordionItem class="settings-section" value="language">
-        <AccordionHeader>
-          <AccordionTrigger class="settings-section-trigger">
-            <span class="settings-section-label">{{ t('settings_section_language') }}</span>
-            <IconTablerChevronDown class="settings-section-chevron" />
-          </AccordionTrigger>
-        </AccordionHeader>
-        <AccordionContent class="settings-section-content">
-          <label class="ui-locale-label">{{ t('app_language') }}</label>
-          <UiSelect
-            :model-value="localePreference"
-            :options="localeOptions"
-            @update:model-value="onLocalePreferenceChange"
-          />
-        </AccordionContent>
-      </AccordionItem>
-
-      <AccordionItem class="settings-section" value="diagnostics">
-        <AccordionHeader>
-          <AccordionTrigger class="settings-section-trigger">
-            <span class="settings-section-label">{{ t('settings_section_diagnostics') }}</span>
-            <IconTablerChevronDown class="settings-section-chevron" />
-          </AccordionTrigger>
-        </AccordionHeader>
-        <AccordionContent class="settings-section-content">
-          <div class="diagnostics-summary-grid">
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_active_thread') }}</p>
-              <p class="diagnostics-value">{{ selectedThreadId || t('diagnostics_none') }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_model') }}</p>
-              <p class="diagnostics-value">{{ selectedModelId || t('diagnostics_none') }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_reasoning') }}</p>
-              <p class="diagnostics-value">{{ selectedReasoningEffort || t('diagnostics_none') }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_requests') }}</p>
-              <p class="diagnostics-value">{{ selectedThreadServerRequests.length }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_stream') }}</p>
-              <p class="diagnostics-value">{{ connectionHealth.notificationStreamConnected ? t('diagnostics_connected') : t('diagnostics_disconnected') }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_last_event') }}</p>
-              <p class="diagnostics-value">{{ formattedLastNotificationAt }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('diagnostics_last_sync') }}</p>
-              <p class="diagnostics-value">{{ formattedLastSyncAt }}</p>
-            </article>
-            <article class="diagnostics-card diagnostics-card-wide">
-              <p class="diagnostics-label">{{ t('diagnostics_current_error') }}</p>
-              <p class="diagnostics-value diagnostics-value-wrap">{{ error || t('diagnostics_none') }}</p>
-            </article>
-          </div>
-          <UiButton variant="surface" size="sm" class="diagnostics-refresh-button" @click="refreshDiagnostics">
-            {{ t('diagnostics_refresh') }}
-          </UiButton>
-          <p v-if="diagnosticsError" class="diagnostics-error">{{ diagnosticsError }}</p>
-          <div class="diagnostics-summary-grid">
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('openclaw_gateway_status_label') }}</p>
-              <p class="diagnostics-value">{{ String(openClawRuntimeDiagnostics.gatewayStatus?.state ?? t('diagnostics_none')) }}</p>
-              <p class="diagnostics-inline-detail">{{ String(openClawRuntimeDiagnostics.gatewayStatus?.detail ?? '') }}</p>
-            </article>
-            <article class="diagnostics-card">
-              <p class="diagnostics-label">{{ t('openclaw_control_ui_status_label') }}</p>
-              <p class="diagnostics-value">{{ String(openClawRuntimeDiagnostics.controlUiStatus?.state ?? t('diagnostics_none')) }}</p>
-              <p class="diagnostics-inline-detail">{{ String(openClawRuntimeDiagnostics.controlUiStatus?.detail ?? '') }}</p>
-            </article>
-          </div>
-          <div v-if="openClawRuntimeDiagnostics.gatewayLog" class="diagnostics-log-block">
-            <p class="diagnostics-log-title">{{ t('openclaw_gateway_log_label') }}</p>
-            <pre class="diagnostics-log-pre">{{ openClawRuntimeDiagnostics.gatewayLog }}</pre>
-          </div>
-          <div v-if="openClawRuntimeDiagnostics.controlUiLog" class="diagnostics-log-block">
-            <p class="diagnostics-log-title">{{ t('openclaw_control_ui_log_label') }}</p>
-            <pre class="diagnostics-log-pre">{{ openClawRuntimeDiagnostics.controlUiLog }}</pre>
-          </div>
-          <div v-if="diagnosticErrors.length > 0" class="diagnostics-log-block">
-            <p class="diagnostics-log-title">{{ t('diagnostics_errors') }}</p>
-            <article
-              v-for="entry in diagnosticErrors"
-              :key="entry.id"
-              class="diagnostics-log-entry diagnostics-log-entry-error"
-            >
-              <div class="diagnostics-log-row">
-                <p class="diagnostics-log-heading">{{ entry.title }}</p>
-                <span class="diagnostics-log-time">{{ formatDiagnosticsTime(entry.atIso) }}</span>
-              </div>
-              <p class="diagnostics-log-detail">{{ entry.detail }}</p>
-            </article>
-          </div>
-          <div v-if="diagnosticEvents.length > 0" class="diagnostics-log-block">
-            <p class="diagnostics-log-title">{{ t('diagnostics_events') }}</p>
-            <article
-              v-for="entry in diagnosticEvents"
-              :key="entry.id"
-              class="diagnostics-log-entry"
-            >
-              <div class="diagnostics-log-row">
-                <p class="diagnostics-log-heading">{{ entry.title }}</p>
-                <span class="diagnostics-log-time">{{ formatDiagnosticsTime(entry.atIso) }}</span>
-              </div>
-              <p class="diagnostics-log-detail">{{ entry.detail }}</p>
-            </article>
-          </div>
-          <ApiMethodsPanel :methods="rpcMethodCatalog" :is-loading="isDiagnosticsLoading" />
-          <ApiMethodsPanel :methods="rpcNotificationCatalog" :is-loading="isDiagnosticsLoading" />
-        </AccordionContent>
-      </AccordionItem>
     </AccordionRoot>
   </SettingsPanel>
 </template>
@@ -528,7 +575,7 @@ import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer from './components/content/ThreadComposer.vue'
 import SkillsHub from './components/content/SkillsHub.vue'
 import ApiMethodsPanel from './components/content/ApiMethodsPanel.vue'
-import ComposerDropdown from './components/content/ComposerDropdown.vue'
+import NewThreadProjectPicker from './components/content/NewThreadProjectPicker.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
 import SettingsPanel from './components/ui/SettingsPanel.vue'
 import ThemeSwitcher from './components/ui/ThemeSwitcher.vue'
@@ -547,7 +594,8 @@ import { useProjectPreferences } from './composables/useProjectPreferences'
 import { useSavedViews, type SavedView } from './composables/useSavedViews'
 import { useUiSettings } from './composables/useUiSettings'
 import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
-import type { ComposerImageAttachment, ReasoningEffort, ThreadScrollState, UiMessage } from './types/codex'
+import { createWorkspace, getDefaultWorkspaceRoot } from './api/workspaces'
+import type { ComposerImageAttachment, ComposerSkillSelection, ReasoningEffort, ThreadScrollState, UiMessage } from './types/codex'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const PROJECT_NONE_OPTION = '__none__'
@@ -695,6 +743,10 @@ const projectInstructionsDraft = ref('')
 const savedViewNameDraft = ref('')
 const workflowStatusMessage = ref('')
 const dashboardStatusMessage = ref('')
+const workspaceDefaultRoot = ref('')
+const isCreatingWorkspace = ref(false)
+const workspaceCreateError = ref('')
+const createdWorkspaceOptions = ref<Array<{ value: string; label: string; projectName: string }>>([])
 const openClawDashboardStatus = ref<{ ok: boolean; status: number; detail: string }>({
   ok: false,
   status: 0,
@@ -733,7 +785,9 @@ const knownThreadIdSet = computed(() => {
 
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => route.name === 'skills')
+const isSettingsRoute = computed(() => route.name === 'settings')
 const contentTitle = computed(() => {
+  if (isSettingsRoute.value) return t('settings_label')
   if (isSkillsRoute.value) return t('skills_hub_title')
   if (isHomeRoute.value) return t('content_new_thread')
   return selectedThread.value?.title ?? t('content_choose_thread')
@@ -777,7 +831,19 @@ const projectModelOptions = computed(() => [
   { value: PROJECT_NONE_OPTION, label: t('project_default_model_none') },
   ...availableModelIds.value.map((modelId) => ({ value: modelId, label: modelId })),
 ])
+const sessionModelOptions = computed(() =>
+  availableModelIds.value.map((modelId) => ({ value: modelId, label: modelId })),
+)
 const projectReasoningOptions = computed(() => [
+  { value: PROJECT_NONE_OPTION, label: t('project_default_reasoning_none') },
+  { value: 'none', label: t('thinking_none') },
+  { value: 'minimal', label: t('thinking_minimal') },
+  { value: 'low', label: t('thinking_low') },
+  { value: 'medium', label: t('thinking_medium') },
+  { value: 'high', label: t('thinking_high') },
+  { value: 'xhigh', label: t('thinking_xhigh') },
+])
+const sessionReasoningOptions = computed(() => [
   { value: PROJECT_NONE_OPTION, label: t('project_default_reasoning_none') },
   { value: 'none', label: t('thinking_none') },
   { value: 'minimal', label: t('thinking_minimal') },
@@ -792,6 +858,12 @@ const DEFAULT_WORKSPACE_NAME = 'codex'
 const newThreadFolderOptions = computed(() => {
   const options: Array<{ value: string; label: string; projectName: string }> = []
   const seenCwds = new Set<string>()
+
+  for (const option of createdWorkspaceOptions.value) {
+    if (!option.value || seenCwds.has(option.value)) continue
+    seenCwds.add(option.value)
+    options.push(option)
+  }
 
   for (const group of projectGroups.value) {
     const cwd = group.threads[0]?.cwd?.trim() ?? ''
@@ -817,6 +889,7 @@ onMounted(() => {
   void refreshDiagnostics()
   void refreshOpenClawDashboardStatus()
   void refreshOpenClawRuntimeDiagnostics()
+  void loadWorkspaceDefaultRoot()
 })
 
 onUnmounted(() => {
@@ -872,6 +945,14 @@ function openSkillsHub(): void {
   }
   if (isSkillsRoute.value) return
   void router.push({ name: 'skills' })
+}
+
+function openGlobalSettings(): void {
+  if (isCompactViewport.value) {
+    setSidebarCollapsed(true)
+  }
+  if (isSettingsRoute.value) return
+  void router.push({ name: 'settings' })
 }
 
 function onStartNewThread(projectName: string): void {
@@ -1031,6 +1112,10 @@ function onProjectInstructionsChange(): void {
   setProjectPreference(activeProjectName.value, { instructions: projectInstructionsDraft.value })
 }
 
+function onThreadReasoningChange(value: string): void {
+  setSelectedReasoningEffort(value === PROJECT_NONE_OPTION ? '' : (value as ReasoningEffort | ''))
+}
+
 function applyProjectDefaults(projectName: string): void {
   if (!projectName) return
   const preference = getProjectPreference(projectName)
@@ -1174,10 +1259,14 @@ function onWindowKeyDown(event: KeyboardEvent): void {
   setSidebarCollapsed(!isSidebarCollapsed.value)
 }
 
-function onSubmitThreadMessage(payload: { text: string; attachments: ComposerImageAttachment[] }): void {
-  const { text, attachments } = payload
+function onSubmitThreadMessage(payload: {
+  text: string
+  attachments: ComposerImageAttachment[]
+  skills: ComposerSkillSelection[]
+}): void {
+  const { text, attachments, skills } = payload
   if (isHomeRoute.value) {
-    void submitFirstMessageForNewThread(text, attachments)
+    void submitFirstMessageForNewThread(text, attachments, skills)
     return
   }
   void (async () => {
@@ -1186,7 +1275,7 @@ function onSubmitThreadMessage(payload: { text: string; attachments: ComposerIma
       if (editingId) {
         await deleteFromMessage(editingId)
       }
-      await sendMessageToSelectedThread(text, attachments)
+      await sendMessageToSelectedThread(text, attachments, skills)
       clearEditingMessage()
     } catch {
       // Error is already reflected in state.
@@ -1199,6 +1288,38 @@ function onSelectNewThreadFolder(cwd: string): void {
   const nextProject = newThreadFolderOptions.value.find((option) => option.value === newThreadCwd.value)?.projectName ?? ''
   if (nextProject) {
     applyProjectDefaults(nextProject)
+  }
+}
+
+async function loadWorkspaceDefaultRoot(): Promise<void> {
+  try {
+    workspaceDefaultRoot.value = await getDefaultWorkspaceRoot()
+  } catch {
+    workspaceDefaultRoot.value = ''
+  }
+}
+
+async function onCreateWorkspace(name: string): Promise<void> {
+  isCreatingWorkspace.value = true
+  workspaceCreateError.value = ''
+  try {
+    const workspace = await createWorkspace(name)
+    const option = {
+      value: workspace.cwd,
+      label: workspace.name,
+      projectName: workspace.name,
+    }
+    createdWorkspaceOptions.value = [
+      option,
+      ...createdWorkspaceOptions.value.filter((entry) => entry.value !== option.value),
+    ]
+    newThreadCwd.value = workspace.cwd
+    applyProjectDefaults(workspace.name)
+    workflowStatusMessage.value = `Created workspace ${workspace.name}.`
+  } catch (error) {
+    workspaceCreateError.value = error instanceof Error ? error.message : 'Workspace creation failed.'
+  } finally {
+    isCreatingWorkspace.value = false
   }
 }
 
@@ -1461,7 +1582,7 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
       return
     }
 
-    if (route.name === 'skills') {
+    if (route.name === 'skills' || route.name === 'settings') {
       return
     }
 
@@ -1490,7 +1611,7 @@ watch(
   async (threadId) => {
     if (!hasInitialized.value) return
     if (isRouteSyncInProgress.value) return
-    if (isHomeRoute.value || isSkillsRoute.value) return
+    if (isHomeRoute.value || isSkillsRoute.value || isSettingsRoute.value) return
 
     if (!threadId) {
       if (route.name !== 'home') {
@@ -1536,12 +1657,23 @@ watch(
   },
 )
 
+watch(
+  () => isSettingsRoute.value,
+  (open) => {
+    if (!open) return
+    void refreshOpenClawDashboardStatus()
+    void refreshOpenClawRuntimeDiagnostics()
+    void refreshDiagnostics()
+  },
+)
+
 async function submitFirstMessageForNewThread(
   text: string,
   attachments: ComposerImageAttachment[],
+  skills: ComposerSkillSelection[],
 ): Promise<void> {
   try {
-    const threadId = await sendMessageToNewThread(text, newThreadCwd.value, attachments)
+    const threadId = await sendMessageToNewThread(text, newThreadCwd.value, attachments, skills)
     if (!threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
   } catch {
@@ -1592,6 +1724,51 @@ async function submitFirstMessageForNewThread(
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent-primary) 10%, transparent), transparent 28%),
     linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent), var(--surface-base));
+}
+
+.global-settings-view {
+  @apply flex h-full min-h-0 flex-col gap-4 overflow-y-auto px-3 pb-6 pt-4 md:px-5;
+}
+
+.global-settings-hero {
+  @apply rounded-[1.5rem] border px-4 py-4 md:px-5;
+  border-color: var(--border-subtle);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 14%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 96%, transparent), var(--surface-base));
+  box-shadow: var(--shadow-soft);
+}
+
+.global-settings-eyebrow {
+  @apply m-0 text-[0.7rem] font-semibold uppercase tracking-[0.22em];
+  color: var(--accent-primary);
+}
+
+.global-settings-title {
+  @apply m-0 pt-2 text-xl font-semibold tracking-[-0.03em] md:text-2xl;
+  color: var(--text-default);
+  font-family: var(--font-display);
+}
+
+.global-settings-subtitle {
+  @apply m-0 pt-2 text-sm leading-6;
+  color: var(--text-muted);
+}
+
+.global-settings-grid {
+  @apply grid min-h-0 gap-4 xl:grid-cols-2;
+}
+
+.settings-section-page {
+  @apply p-4 md:p-5;
+}
+
+.settings-section-page-wide {
+  @apply xl:col-span-2;
+}
+
+.settings-page-section-head {
+  @apply mb-4 flex items-start justify-between gap-3;
 }
 
 .sidebar-thread-controls-host {
@@ -1714,7 +1891,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .new-thread-empty {
-  @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-0.5 px-6;
+  @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-3 px-6;
 }
 
 .new-thread-hero {
@@ -1723,21 +1900,8 @@ async function submitFirstMessageForNewThread(
   font-family: var(--font-display);
 }
 
-.new-thread-folder-dropdown {
-  @apply text-[2.5rem];
-  color: var(--text-muted);
-}
-
-.new-thread-folder-dropdown :deep(.composer-dropdown-trigger) {
-  @apply h-auto text-[2.5rem] leading-[1.05];
-}
-
-.new-thread-folder-dropdown :deep(.composer-dropdown-value) {
-  @apply leading-[1.05];
-}
-
-.new-thread-folder-dropdown :deep(.composer-dropdown-chevron) {
-  @apply h-5 w-5 mt-0;
+.new-thread-project-picker {
+  @apply w-full max-w-2xl;
 }
 
 .new-thread-guide {
@@ -1775,6 +1939,11 @@ async function submitFirstMessageForNewThread(
   color: var(--text-muted);
 }
 
+.openclaw-dashboard-version {
+  @apply pt-1 text-[11px] font-semibold uppercase tracking-[0.14em];
+  color: color-mix(in srgb, var(--accent-primary) 72%, var(--text-default));
+}
+
 .ui-locale-label {
   @apply text-xs;
   color: var(--text-muted);
@@ -1810,7 +1979,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-section {
-  @apply rounded-2xl border px-4 py-2;
+  @apply min-w-0 overflow-hidden rounded-2xl border px-4 py-2;
   border-color: var(--border-subtle);
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
 }
@@ -1825,7 +1994,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-section-trigger {
-  @apply flex w-full items-center justify-between gap-3 py-2 text-left outline-none;
+  @apply flex min-w-0 w-full items-center justify-between gap-3 py-2 text-left outline-none;
 }
 
 .settings-section-chevron {
@@ -1838,7 +2007,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-section-content {
-  @apply flex flex-col gap-3 pb-3;
+  @apply min-w-0 flex flex-col gap-3 pb-3;
 }
 
 .debug-status-card {
@@ -2037,12 +2206,8 @@ async function submitFirstMessageForNewThread(
     @apply text-[2rem];
   }
 
-  .new-thread-folder-dropdown {
-    @apply text-[1.5rem];
-  }
-
-  .new-thread-folder-dropdown :deep(.composer-dropdown-trigger) {
-    @apply text-[1.5rem];
+  .new-thread-project-picker {
+    @apply max-w-none;
   }
 
   .new-thread-guide {

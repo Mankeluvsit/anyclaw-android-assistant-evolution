@@ -88,6 +88,13 @@ export type ComposerImageAttachment = {
   url: string
 }
 
+export type ComposerSkillSelection = {
+  name: string
+  path: string
+  description?: string
+  enabled?: boolean
+}
+
 export type UiServerRequest = {
   id: number
   method: string

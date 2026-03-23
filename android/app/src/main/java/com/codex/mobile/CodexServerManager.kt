@@ -95,6 +95,25 @@ class CodexServerManager(private val context: Context) {
     private fun openClawStateDir(paths: BootstrapInstaller.Paths): File =
         File(paths.homeDir, ".openclaw-android/state").apply { mkdirs() }
 
+    private fun openClawCommand(paths: BootstrapInstaller.Paths): String =
+        "${paths.prefixDir}/bin/openclaw"
+
+    private fun ensureOpenClawWrapper(paths: BootstrapInstaller.Paths) {
+        val wrapper = File(paths.prefixDir, "bin/openclaw")
+        val targetMjs = File(paths.prefixDir, "lib/node_modules/openclaw/openclaw.mjs")
+        if (!targetMjs.exists()) {
+            Log.w(TAG, "openclaw.mjs missing, cannot create wrapper")
+            return
+        }
+
+        wrapper.writeText(
+            "#!/system/bin/sh\n" +
+                "exec ${paths.prefixDir}/bin/node ${targetMjs.absolutePath} \"\$@\"\n",
+        )
+        wrapper.setExecutable(true)
+        Log.i(TAG, "Created OpenClaw wrapper at ${wrapper.absolutePath}")
+    }
+
     private fun resetOpenClawLog(paths: BootstrapInstaller.Paths, fileName: String) {
         runCatching {
             File(openClawStateDir(paths), fileName).writeText("")
@@ -774,6 +793,9 @@ H3
         onProgress("Patching OpenClaw paths…")
         patchOpenClawPaths()
 
+        onProgress("Creating OpenClaw launcher…")
+        ensureOpenClawWrapper(paths)
+
         // Patch gateway JS to survive Android network interface errors
         // and allow device-auth bypass
         onProgress("Patching gateway for Android…")
@@ -816,6 +838,7 @@ H3
 
         onProgress("Re-applying OpenClaw Android patches…")
         patchOpenClawPaths()
+        ensureOpenClawWrapper(paths)
         patchGatewayForAndroid()
         return isOpenClawInstalled()
     }
@@ -1444,7 +1467,7 @@ H3
 
         val env = buildEnvironment(paths)
         val shell = "${paths.prefixDir}/bin/sh"
-        val cmd = "exec openclaw gateway run --force --port $openClawGatewayPort 2>&1"
+        val cmd = "exec ${openClawCommand(paths)} gateway run --force --port $openClawGatewayPort 2>&1"
 
         val pb = ProcessBuilder(shell, "-c", cmd)
         pb.environment().clear()
@@ -1815,7 +1838,7 @@ H3
     fun isOpenClawGatewayResponsive(): Boolean {
         if (!isOpenClawInstalled()) return false
         val code = runInPrefix(
-            "openclaw gateway call health --json --params '{}' >/dev/null 2>&1",
+            "${openClawCommand(BootstrapInstaller.getPaths(context))} gateway call health --json --params '{}' >/dev/null 2>&1",
         )
         return code == 0
     }
@@ -1883,7 +1906,7 @@ EOF
             fi
 
             for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-              openclaw gateway call health --json --params '{}' >/dev/null 2>&1 && break
+              ${openClawCommand(BootstrapInstaller.getPaths(context))} gateway call health --json --params '{}' >/dev/null 2>&1 && break
               sleep 2
             done
 
@@ -1892,7 +1915,7 @@ EOF
             const fs = require('fs');
             const path = require('path');
             function runOpenClaw(args) {
-              const res = spawnSync('openclaw', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+              const res = spawnSync('${openClawCommand(BootstrapInstaller.getPaths(context))}', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
               const code = typeof res.status === 'number' ? res.status : 1;
               const errObj = res.error ? String(res.error) : '';
               return {

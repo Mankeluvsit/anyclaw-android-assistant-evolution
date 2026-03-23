@@ -70,3 +70,31 @@ export type InstalledSkill = {
   scope: 'user' | 'repo' | 'system' | 'admin'
   enabled: boolean
 }
+
+export type GitHubHubSkill = {
+  name: string
+  owner: string
+  description: string
+  displayName: string
+  publishedAt: number
+  avatarUrl: string
+  url: string
+  installed: boolean
+}
+
+export type GitHubSkillsSyncStatus = {
+  loggedIn: boolean
+  githubUsername: string
+  repoOwner: string
+  repoName: string
+  configured: boolean
+  startup: {
+    inProgress: boolean
+    mode: string
+    branch: string
+    lastAction: string
+    lastRunAtIso: string
+    lastSuccessAtIso: string
+    lastError: string
+  }
+}

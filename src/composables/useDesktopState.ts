@@ -18,6 +18,7 @@ import {
 } from '../api/codexGateway'
 import type {
   ComposerImageAttachment,
+  ComposerSkillSelection,
   UiConnectionHealth,
   UiDiagnosticEvent,
   ReasoningEffort,
@@ -1758,10 +1759,14 @@ export function useDesktopState() {
     }
   }
 
-  async function sendMessageToSelectedThread(text: string, attachments: ComposerImageAttachment[] = []): Promise<void> {
+  async function sendMessageToSelectedThread(
+    text: string,
+    attachments: ComposerImageAttachment[] = [],
+    skills: ComposerSkillSelection[] = [],
+  ): Promise<void> {
     const threadId = selectedThreadId.value
     const nextText = text.trim()
-    if (!threadId || (!nextText && attachments.length === 0)) return
+    if (!threadId || (!nextText && attachments.length === 0 && skills.length === 0)) return
 
     isSendingMessage.value = true
     error.value = ''
@@ -1775,7 +1780,7 @@ export function useDesktopState() {
     setThreadInProgress(threadId, true)
 
     try {
-      await startTurnForThread(threadId, nextText, attachments)
+      await startTurnForThread(threadId, nextText, attachments, skills)
       pushDiagnosticEvent({
         scope: 'thread',
         threadId,
@@ -1804,11 +1809,12 @@ export function useDesktopState() {
     text: string,
     cwd: string,
     attachments: ComposerImageAttachment[] = [],
+    skills: ComposerSkillSelection[] = [],
   ): Promise<string> {
     const nextText = text.trim()
     const targetCwd = cwd.trim()
     const selectedModel = selectedModelId.value.trim()
-    if (!nextText && attachments.length === 0) return ''
+    if (!nextText && attachments.length === 0 && skills.length === 0) return ''
 
     isSendingMessage.value = true
     error.value = ''
@@ -1832,7 +1838,7 @@ export function useDesktopState() {
       setTurnErrorForThread(threadId, null)
       setThreadInProgress(threadId, true)
 
-      await startTurnForThread(threadId, nextText, attachments)
+      await startTurnForThread(threadId, nextText, attachments, skills)
       pushDiagnosticEvent({
         scope: 'thread',
         threadId,
@@ -1866,6 +1872,7 @@ export function useDesktopState() {
     threadId: string,
     nextText: string,
     attachments: ComposerImageAttachment[] = [],
+    skills: ComposerSkillSelection[] = [],
   ): Promise<void> {
     const modelId = selectedModelId.value.trim()
     const reasoningEffort = selectedReasoningEffort.value
@@ -1881,6 +1888,7 @@ export function useDesktopState() {
         modelId || undefined,
         reasoningEffort || undefined,
         attachments,
+        skills,
       )
 
       resumedThreadById.value = {
@@ -1990,6 +1998,18 @@ export function useDesktopState() {
     applyThreadFlags()
   }
 
+  function shouldRefreshThreadMessages(threadId: string, options: { dirty?: boolean } = {}): boolean {
+    if (!threadId) return false
+    const isDirty = options.dirty === true
+    const isSelected = selectedThreadId.value === threadId
+    const isInProgress = inProgressById.value[threadId] === true
+    const hasLoadedMessages = loadedMessagesByThreadId.value[threadId] === true
+    const currentVersion = currentThreadVersion(threadId)
+    const loadedVersion = loadedVersionByThreadId.value[threadId] ?? ''
+    const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
+    return isDirty || isSelected || isInProgress || hasLoadedMessages || hasVersionChange
+  }
+
   async function syncThreadStatus(): Promise<void> {
     if (isPolling.value) return
     isPolling.value = true
@@ -2000,12 +2020,7 @@ export function useDesktopState() {
       if (!selectedThreadId.value) return
 
       const threadId = selectedThreadId.value
-      const currentVersion = currentThreadVersion(threadId)
-      const loadedVersion = loadedVersionByThreadId.value[threadId] ?? ''
-      const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
-      const isInProgress = inProgressById.value[threadId] === true
-
-      if (isInProgress || hasVersionChange) {
+      if (shouldRefreshThreadMessages(threadId)) {
         await loadMessages(threadId, { silent: true })
       }
     } catch {
@@ -2038,17 +2053,16 @@ export function useDesktopState() {
         await loadThreads()
       }
 
-      const activeThreadId = selectedThreadId.value
-      if (!activeThreadId) return
+      const threadIdsToCheck = new Set<string>(threadIdsToRefresh)
+      if (selectedThreadId.value) {
+        threadIdsToCheck.add(selectedThreadId.value)
+      }
 
-      const isActiveDirty = threadIdsToRefresh.has(activeThreadId)
-      const isInProgress = inProgressById.value[activeThreadId] === true
-      const currentVersion = currentThreadVersion(activeThreadId)
-      const loadedVersion = loadedVersionByThreadId.value[activeThreadId] ?? ''
-      const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
-
-      if (isActiveDirty || isInProgress || hasVersionChange || shouldRefreshThreads) {
-        await loadMessages(activeThreadId, { silent: true })
+      for (const threadId of threadIdsToCheck) {
+        if (!shouldRefreshThreadMessages(threadId, { dirty: threadIdsToRefresh.has(threadId) || shouldRefreshThreads })) {
+          continue
+        }
+        await loadMessages(threadId, { silent: true })
       }
     } catch {
       // Keep UI stable on transient event sync failures.

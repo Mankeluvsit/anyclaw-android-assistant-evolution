@@ -68,8 +68,8 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel {
-  @apply fixed right-0 top-0 z-[121] flex h-[100dvh] w-full max-w-md flex-col overflow-hidden border-l px-5 py-5 outline-none;
-  border-color: var(--border-subtle);
+  @apply fixed inset-y-0 right-0 z-[121] flex h-[100dvh] w-screen max-w-none flex-col overflow-hidden px-5 py-5 outline-none;
+  border-left: 1px solid var(--border-subtle);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 97%, transparent), var(--surface-base));
   box-shadow: -28px 0 60px rgba(0, 0, 0, 0.28);
@@ -102,8 +102,14 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel-body {
-  @apply mt-1 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-5 pr-2 pb-[max(1rem,env(safe-area-inset-bottom))];
+  @apply mt-1 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-5 pr-1 pb-[max(1rem,env(safe-area-inset-bottom))];
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 960px) {
+  .settings-panel {
+    width: min(42rem, 100vw);
+  }
 }
 </style>

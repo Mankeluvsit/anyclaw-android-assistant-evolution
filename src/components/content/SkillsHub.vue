@@ -13,22 +13,39 @@
     </header>
 
     <section class="skills-hub-toolbar">
+      <div class="skills-hub-source-picker">
+        <span class="skills-hub-source-label">{{ t('skills_hub_source_label') }}</span>
+        <UiSelect
+          :model-value="sourceMode"
+          :options="sourceOptions"
+          @update:model-value="onSourceModeChange"
+        />
+      </div>
       <label class="skills-hub-search-shell">
         <IconTablerSearch class="skills-hub-search-icon" />
         <input
           v-model="query"
           class="skills-hub-search-input"
           type="search"
-          :placeholder="t('skills_hub_search_placeholder')"
+          :placeholder="sourceMode === 'github' ? t('skills_hub_github_search_placeholder') : t('skills_hub_search_placeholder')"
           @keydown.enter.prevent="runSearch()"
         />
       </label>
       <UiButton variant="solid" @click="runSearch()">
         {{ t('skills_hub_search_action') }}
       </UiButton>
+      <UiButton
+        v-if="isCompactViewport"
+        variant="surface"
+        class="skills-hub-installed-trigger"
+        @click="openMobileDetailSheet()"
+      >
+        {{ t('skills_hub_manage_installed') }}
+        <span v-if="installedSkills.length > 0" class="skills-hub-installed-trigger-count">{{ installedSkills.length }}</span>
+      </UiButton>
     </section>
 
-    <section class="skills-hub-suggestions">
+    <section v-if="sourceMode === 'clawhub'" class="skills-hub-suggestions">
       <span class="skills-hub-suggestions-label">{{ t('skills_hub_try_label') }}</span>
       <button
         v-for="suggestion in suggestions"
@@ -47,18 +64,116 @@
           <div>
             <h3 class="skills-hub-results-title">{{ t('skills_hub_results_title') }}</h3>
             <p class="skills-hub-results-meta">
-              <template v-if="query.trim().length > 0">
+              <template v-if="sourceMode === 'clawhub' && query.trim().length > 0">
                 {{ t('skills_hub_results_for', { query: query.trim() }) }}
+              </template>
+              <template v-else-if="sourceMode === 'github'">
+                {{ t('skills_hub_github_results_idle') }}
               </template>
               <template v-else>
                 {{ t('skills_hub_results_idle') }}
               </template>
             </p>
           </div>
-          <span v-if="results.length > 0" class="skills-hub-chip">{{ results.length }}</span>
+          <span v-if="sourceMode === 'clawhub' && results.length > 0" class="skills-hub-chip">{{ results.length }}</span>
         </header>
 
-        <div v-if="isLoading" class="skills-hub-state">
+        <template v-if="sourceMode === 'github'">
+          <div class="skills-hub-github-card">
+            <section class="skills-hub-section-card">
+              <header class="skills-hub-section-head">
+                <h4>{{ t('skills_hub_github_sync_title') }}</h4>
+                <span class="skills-hub-chip">{{ githubSyncStatus.loggedIn ? t('skills_hub_github_connected') : t('skills_hub_github_not_connected') }}</span>
+              </header>
+              <p class="skills-hub-github-copy">
+                {{ githubSyncStatus.loggedIn
+                  ? t('skills_hub_github_connected_as', { username: githubSyncStatus.githubUsername || diagnosticsNone })
+                  : t('skills_hub_github_sync_description') }}
+              </p>
+              <dl v-if="githubSyncStatus.loggedIn" class="skills-hub-sync-stats">
+                <div class="skills-hub-sync-stat">
+                  <dt>{{ t('skills_hub_github_status_branch') }}</dt>
+                  <dd>{{ githubSyncStatus.startup.branch || diagnosticsNone }}</dd>
+                </div>
+                <div class="skills-hub-sync-stat">
+                  <dt>{{ t('skills_hub_github_status_last_action') }}</dt>
+                  <dd>{{ githubSyncStatus.startup.lastAction || diagnosticsNone }}</dd>
+                </div>
+                <div v-if="githubSyncStatus.startup.lastError" class="skills-hub-sync-stat">
+                  <dt>{{ t('skills_hub_github_status_last_error') }}</dt>
+                  <dd>{{ githubSyncStatus.startup.lastError }}</dd>
+                </div>
+              </dl>
+              <p v-if="githubStatusMessage" class="workflow-status-message">{{ githubStatusMessage }}</p>
+              <div v-if="githubDeviceLogin" class="skills-hub-github-device">
+                <span>{{ t('skills_hub_github_device_code') }}</span>
+                <code>{{ githubDeviceLogin.user_code }}</code>
+                <a :href="githubDeviceLogin.verification_uri" target="_blank" rel="noreferrer">
+                  {{ t('skills_hub_github_device_open') }}
+                </a>
+              </div>
+              <div class="skills-hub-github-actions">
+                <UiButton v-if="!githubSyncStatus.loggedIn" variant="surface" :disabled="githubAuthPending" @click="startGithubDeviceFlow">
+                  {{ githubAuthPending ? t('skills_hub_github_device_login_pending') : t('skills_hub_github_device_login') }}
+                </UiButton>
+                <UiButton v-else variant="ghost" :disabled="githubAuthPending" @click="logoutGitHub">
+                  {{ t('skills_hub_github_logout') }}
+                </UiButton>
+                <UiButton variant="ghost" :disabled="githubLoading || githubAuthPending" @click="refreshGitHubSource()">
+                  {{ githubLoading ? t('skills_hub_github_refresh_pending') : t('skills_hub_github_refresh') }}
+                </UiButton>
+              </div>
+            </section>
+          </div>
+          <div v-if="githubLoading" class="skills-hub-state">
+            {{ t('skills_hub_github_loading') }}
+          </div>
+          <div v-else-if="githubError" class="skills-hub-state skills-hub-state-error">
+            {{ githubError }}
+          </div>
+          <div v-else-if="githubResults.length === 0" class="skills-hub-state">
+            {{ t('skills_hub_github_empty') }}
+          </div>
+          <div v-else class="skills-hub-grid">
+            <article
+              v-for="skill in githubResults"
+              :key="`${skill.owner}/${skill.name}`"
+              class="skills-hub-card"
+              :data-active="selectedGitHubSkill?.owner === skill.owner && selectedGitHubSkill?.name === skill.name"
+            >
+              <button class="skills-hub-card-hit" type="button" @click="selectGitHubSkill(skill)">
+                <div class="skills-hub-card-head">
+                  <div class="min-w-0">
+                    <h4 class="skills-hub-card-title">{{ skill.displayName || skill.name }}</h4>
+                    <p class="skills-hub-card-slug">{{ skill.owner }}/{{ skill.name }}</p>
+                  </div>
+                  <span class="skills-hub-card-score">{{ formatDate(skill.publishedAt) }}</span>
+                </div>
+                <p class="skills-hub-card-summary">
+                  {{ skill.description || t('skills_hub_summary_missing') }}
+                </p>
+                <div class="skills-hub-card-meta">
+                  <span>{{ skill.url }}</span>
+                </div>
+              </button>
+              <div class="skills-hub-installed-actions">
+                <UiButton
+                  v-if="!skill.installed"
+                  size="sm"
+                  variant="solid"
+                  :disabled="installingGitHubSkillKey === `${skill.owner}/${skill.name}`"
+                  @click="installGitHubSkillCard(skill)"
+                >
+                  {{ installingGitHubSkillKey === `${skill.owner}/${skill.name}` ? t('skills_hub_install_pending') : t('skills_hub_install_action') }}
+                </UiButton>
+                <UiButton v-else size="sm" variant="ghost" disabled>
+                  {{ t('skills_hub_installed_state') }}
+                </UiButton>
+              </div>
+            </article>
+          </div>
+        </template>
+        <div v-else-if="isLoading" class="skills-hub-state">
           {{ t('skills_hub_loading') }}
         </div>
         <div v-else-if="errorMessage" class="skills-hub-state skills-hub-state-error">
@@ -97,7 +212,26 @@
         </div>
       </section>
 
-      <aside class="skills-hub-detail">
+      <button
+        v-if="isCompactViewport && isMobileDetailOpen"
+        class="skills-hub-mobile-backdrop"
+        type="button"
+        :aria-label="t('skills_hub_detail_sheet_close')"
+        @click="closeMobileDetailSheet"
+      />
+      <aside
+        class="skills-hub-detail"
+        :class="{ 'skills-hub-detail-sheet': isCompactViewport, 'skills-hub-detail-sheet-open': isCompactViewport && isMobileDetailOpen }"
+      >
+        <header v-if="isCompactViewport" class="skills-hub-mobile-sheet-head">
+          <div>
+            <p class="skills-hub-detail-slug">{{ t('skills_hub_detail_sheet_title') }}</p>
+            <h3 class="skills-hub-detail-title">{{ mobileSheetTitle }}</h3>
+          </div>
+          <UiButton size="sm" variant="ghost" @click="closeMobileDetailSheet">
+            {{ t('skills_hub_detail_sheet_close') }}
+          </UiButton>
+        </header>
         <section v-if="installedSkills.length > 0" class="skills-hub-section-card">
           <header class="skills-hub-section-head">
             <h4>{{ t('skills_hub_installed_label') }}</h4>
@@ -110,11 +244,11 @@
                 <p>{{ skill.shortDescription || skill.description || skill.path }}</p>
               </div>
               <div class="skills-hub-installed-actions">
-                <UiButton size="sm" variant="ghost" @click="toggleInstalledSkill(skill)">
-                  {{ skill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action') }}
+                <UiButton size="sm" variant="ghost" :disabled="busyInstalledSkillPath === skill.path" @click="toggleInstalledSkill(skill)">
+                  {{ busyInstalledSkillPath === skill.path ? t('skills_hub_toggle_pending') : (skill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action')) }}
                 </UiButton>
-                <UiButton size="sm" variant="ghost" @click="removeInstalledSkill(skill)">
-                  {{ t('skills_hub_uninstall_action') }}
+                <UiButton size="sm" variant="ghost" :disabled="busyInstalledSkillPath === skill.path" @click="removeInstalledSkill(skill)">
+                  {{ busyInstalledSkillPath === skill.path ? t('skills_hub_uninstall_pending') : t('skills_hub_uninstall_action') }}
                 </UiButton>
               </div>
             </li>
@@ -126,6 +260,45 @@
         </div>
         <div v-else-if="detailError" class="skills-hub-state skills-hub-state-error">
           {{ detailError }}
+        </div>
+        <section v-else-if="sourceMode === 'github' && selectedGitHubSkill" class="skills-hub-section-card skills-hub-github-detail-card">
+          <header class="skills-hub-detail-head">
+            <div>
+              <p class="skills-hub-detail-slug">{{ selectedGitHubSkill.owner }}/{{ selectedGitHubSkill.name }}</p>
+              <h3 class="skills-hub-detail-title">{{ selectedGitHubSkill.displayName || selectedGitHubSkill.name }}</h3>
+            </div>
+            <div class="skills-hub-detail-actions">
+              <UiButton variant="surface" @click="openUrl(selectedGitHubSkill.url)">
+                {{ t('skills_hub_github_open_repo') }}
+              </UiButton>
+              <UiButton
+                v-if="!selectedGitHubSkill.installed"
+                variant="solid"
+                :disabled="installingGitHubSkillKey === `${selectedGitHubSkill.owner}/${selectedGitHubSkill.name}`"
+                @click="installGitHubSkillCard(selectedGitHubSkill)"
+              >
+                {{ installingGitHubSkillKey === `${selectedGitHubSkill.owner}/${selectedGitHubSkill.name}` ? t('skills_hub_install_pending') : t('skills_hub_install_action') }}
+              </UiButton>
+              <UiButton v-else variant="ghost" disabled>
+                {{ t('skills_hub_installed_state') }}
+              </UiButton>
+            </div>
+          </header>
+          <p class="skills-hub-detail-summary">
+            {{ selectedGitHubSkill.description || t('skills_hub_summary_missing') }}
+          </p>
+          <dl class="skills-hub-info-list">
+            <div class="skills-hub-info-row">
+              <dt>{{ t('skills_hub_owner_label') }}</dt>
+              <dd>{{ selectedGitHubSkill.owner }}</dd>
+            </div>
+          </dl>
+          <div v-if="githubReadme.trim().length > 0" class="skills-hub-github-readme">
+            <pre>{{ githubReadme }}</pre>
+          </div>
+        </section>
+        <div v-else-if="sourceMode === 'github'" class="skills-hub-state">
+          {{ t('skills_hub_github_detail_idle') }}
         </div>
         <div v-else-if="!selectedDetail" class="skills-hub-state">
           {{ t('skills_hub_detail_idle') }}
@@ -140,11 +313,11 @@
               <UiButton variant="surface" @click="downloadLatest()">
                 {{ t('skills_hub_download_latest') }}
               </UiButton>
-              <UiButton v-if="selectedInstalledSkill" variant="ghost" @click="toggleInstalledSkill(selectedInstalledSkill)">
-                {{ selectedInstalledSkill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action') }}
+              <UiButton v-if="selectedInstalledSkill" variant="ghost" :disabled="busyInstalledSkillPath === selectedInstalledSkill.path" @click="toggleInstalledSkill(selectedInstalledSkill)">
+                {{ busyInstalledSkillPath === selectedInstalledSkill.path ? t('skills_hub_toggle_pending') : (selectedInstalledSkill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action')) }}
               </UiButton>
-              <UiButton v-else variant="solid" @click="installLatest()">
-                {{ t('skills_hub_install_action') }}
+              <UiButton v-else variant="solid" :disabled="installingClawHubSlug === selectedDetail.skill.slug" @click="installLatest()">
+                {{ installingClawHubSlug === selectedDetail.skill.slug ? t('skills_hub_install_pending') : t('skills_hub_install_action') }}
               </UiButton>
             </div>
           </header>
@@ -220,14 +393,39 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { getClawHubDownloadUrl, getClawHubSkillDetail, getClawHubSkillVersions, getInstalledSkills, installClawHubSkill, searchClawHubSkills, setInstalledSkillEnabled, uninstallSkill } from '../../api/skillsHub'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  completeGitHubDeviceLogin,
+  getClawHubDownloadUrl,
+  getClawHubSkillDetail,
+  getClawHubSkillVersions,
+  getGitHubHubSkillReadme,
+  getGitHubSkillsSyncStatus,
+  getInstalledSkills,
+  installClawHubSkill,
+  installGitHubHubSkill,
+  logoutGitHubSkillsSync,
+  searchClawHubSkills,
+  searchGitHubHubSkills,
+  setInstalledSkillEnabled,
+  startGitHubDeviceLogin,
+  uninstallSkill,
+} from '../../api/skillsHub'
 import IconTablerSearch from '../icons/IconTablerSearch.vue'
 import UiButton from '../ui/UiButton.vue'
+import UiSelect from '../ui/UiSelect.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
-import type { ClawHubSkillDetail, ClawHubSkillSearchResult, ClawHubSkillVersion, InstalledSkill } from '../../types/skillsHub'
+import type {
+  ClawHubSkillDetail,
+  ClawHubSkillSearchResult,
+  ClawHubSkillVersion,
+  GitHubHubSkill,
+  GitHubSkillsSyncStatus,
+  InstalledSkill,
+} from '../../types/skillsHub'
 
 const { t } = useUiI18n()
+const diagnosticsNone = computed(() => t('diagnostics_none'))
 
 const query = ref('')
 const results = ref<ClawHubSkillSearchResult[]>([])
@@ -239,8 +437,42 @@ const versions = ref<ClawHubSkillVersion[]>([])
 const isDetailLoading = ref(false)
 const detailError = ref('')
 const installedSkills = ref<InstalledSkill[]>([])
+const sourceMode = ref<'clawhub' | 'github'>('clawhub')
+const githubResults = ref<GitHubHubSkill[]>([])
+const githubLoading = ref(false)
+const githubError = ref('')
+const githubStatusMessage = ref('')
+const githubDeviceLogin = ref<{ device_code: string; user_code: string; verification_uri: string; interval?: number } | null>(null)
+const selectedGitHubSkill = ref<GitHubHubSkill | null>(null)
+const githubReadme = ref('')
+const isCompactViewport = ref(false)
+const isMobileDetailOpen = ref(false)
+const githubAuthPending = ref(false)
+const installingGitHubSkillKey = ref('')
+const installingClawHubSlug = ref('')
+const busyInstalledSkillPath = ref('')
+const githubSyncStatus = ref<GitHubSkillsSyncStatus>({
+  loggedIn: false,
+  githubUsername: '',
+  repoOwner: '',
+  repoName: '',
+  configured: false,
+  startup: {
+    inProgress: false,
+    mode: 'idle',
+    branch: 'main',
+    lastAction: 'idle',
+    lastRunAtIso: '',
+    lastSuccessAtIso: '',
+    lastError: '',
+  },
+})
 
 const suggestions = ['filesystem', 'docker', 'github', 'browser', 'postgres', 'slack']
+const sourceOptions = computed(() => [
+  { value: 'clawhub', label: t('skills_hub_source_clawhub') },
+  { value: 'github', label: t('skills_hub_source_github') },
+])
 
 const ownerLabel = computed(() => {
   const owner = selectedDetail.value?.owner
@@ -260,8 +492,25 @@ const tagSummary = computed(() => {
   return entries.map(([key, value]) => `${key}: ${value}`).join(' · ')
 })
 
+const mobileSheetTitle = computed(() => {
+  if (sourceMode.value === 'github' && selectedGitHubSkill.value) {
+    return selectedGitHubSkill.value.displayName || selectedGitHubSkill.value.name
+  }
+  if (selectedDetail.value) {
+    return selectedDetail.value.skill.displayName
+  }
+  if (installedSkills.value.length > 0) {
+    return t('skills_hub_installed_label')
+  }
+  return t('skills_hub_results_title')
+})
+
 async function runSearch(nextQuery = query.value): Promise<void> {
   query.value = nextQuery
+  if (sourceMode.value === 'github') {
+    await refreshGitHubSource()
+    return
+  }
   const trimmed = nextQuery.trim()
   errorMessage.value = ''
   if (!trimmed) {
@@ -284,10 +533,23 @@ async function runSearch(nextQuery = query.value): Promise<void> {
 
 async function refreshInstalledSkills(): Promise<void> {
   installedSkills.value = await getInstalledSkills()
+  const installedKeys = new Set(installedSkills.value.map((skill) => skill.name))
+  githubResults.value = githubResults.value.map((skill) => ({
+    ...skill,
+    installed: installedKeys.has(skill.name),
+  }))
+  if (selectedGitHubSkill.value) {
+    selectedGitHubSkill.value = {
+      ...selectedGitHubSkill.value,
+      installed: installedKeys.has(selectedGitHubSkill.value.name),
+    }
+  }
 }
 
 async function openSkill(slug: string): Promise<void> {
+  if (sourceMode.value !== 'clawhub') return
   selectedSlug.value = slug
+  openMobileDetailSheet()
   detailError.value = ''
   isDetailLoading.value = true
   try {
@@ -310,6 +572,21 @@ function applySuggestion(suggestion: string): void {
   void runSearch(suggestion)
 }
 
+function onSourceModeChange(value: string): void {
+  sourceMode.value = value === 'github' ? 'github' : 'clawhub'
+  githubStatusMessage.value = ''
+  selectedSlug.value = ''
+  selectedDetail.value = null
+  detailError.value = ''
+  versions.value = []
+  if (sourceMode.value === 'github') {
+    query.value = ''
+    selectedGitHubSkill.value = null
+    githubReadme.value = ''
+    void refreshGitHubSource()
+  }
+}
+
 async function downloadLatest(): Promise<void> {
   if (!selectedDetail.value) return
   const url = await getClawHubDownloadUrl(selectedDetail.value.skill.slug, { tag: 'latest' })
@@ -318,10 +595,115 @@ async function downloadLatest(): Promise<void> {
 
 async function installLatest(): Promise<void> {
   if (!selectedDetail.value) return
-  await installClawHubSkill(selectedDetail.value.skill.slug, {
-    version: selectedDetail.value.latestVersion?.version,
-  })
-  await refreshInstalledSkills()
+  installingClawHubSlug.value = selectedDetail.value.skill.slug
+  try {
+    await installClawHubSkill(selectedDetail.value.skill.slug, {
+      version: selectedDetail.value.latestVersion?.version,
+    })
+    await refreshInstalledSkills()
+    await openSkill(selectedDetail.value.skill.slug)
+  } finally {
+    installingClawHubSlug.value = ''
+  }
+}
+
+async function installGitHubSkillCard(skill: GitHubHubSkill): Promise<void> {
+  githubStatusMessage.value = ''
+  installingGitHubSkillKey.value = `${skill.owner}/${skill.name}`
+  try {
+    await installGitHubHubSkill(skill.owner, skill.name)
+    githubStatusMessage.value = t('skills_hub_github_install_success')
+    await refreshInstalledSkills()
+    await refreshGitHubSource()
+    if (selectedGitHubSkill.value?.owner === skill.owner && selectedGitHubSkill.value?.name === skill.name) {
+      selectedGitHubSkill.value = { ...skill, installed: true }
+    }
+    openMobileDetailSheet()
+  } catch (error) {
+    githubStatusMessage.value = error instanceof Error ? error.message : t('skills_hub_github_install_failed')
+  } finally {
+    installingGitHubSkillKey.value = ''
+  }
+}
+
+async function selectGitHubSkill(skill: GitHubHubSkill): Promise<void> {
+  selectedGitHubSkill.value = skill
+  openMobileDetailSheet()
+  githubReadme.value = ''
+  try {
+    githubReadme.value = await getGitHubHubSkillReadme(skill.owner, skill.name)
+  } catch {
+    githubReadme.value = ''
+  }
+}
+
+async function loadGitHubSyncStatus(): Promise<void> {
+  try {
+    githubSyncStatus.value = await getGitHubSkillsSyncStatus()
+  } catch {
+    // best effort
+  }
+}
+
+async function refreshGitHubSource(): Promise<void> {
+  if (sourceMode.value !== 'github') return
+  githubLoading.value = true
+  githubError.value = ''
+  try {
+    await loadGitHubSyncStatus()
+    githubResults.value = await searchGitHubHubSkills(query.value)
+    if (selectedGitHubSkill.value) {
+      selectedGitHubSkill.value =
+        githubResults.value.find((item) => item.owner === selectedGitHubSkill.value?.owner && item.name === selectedGitHubSkill.value?.name)
+        ?? selectedGitHubSkill.value
+    }
+  } catch (error) {
+    githubError.value = error instanceof Error ? error.message : t('skills_hub_github_install_failed')
+  } finally {
+    githubLoading.value = false
+  }
+}
+
+async function startGithubDeviceFlow(): Promise<void> {
+  githubStatusMessage.value = ''
+  githubAuthPending.value = true
+  try {
+    const payload = await startGitHubDeviceLogin()
+    githubDeviceLogin.value = payload
+    const waitMs = Math.max((payload.interval ?? 5) * 1000, 3000)
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs))
+      const result = await completeGitHubDeviceLogin(payload.device_code)
+      if (result.ok) {
+        githubDeviceLogin.value = null
+        githubStatusMessage.value = t('skills_hub_github_install_success')
+        await loadGitHubSyncStatus()
+        return
+      }
+      if (!result.pending) {
+        throw new Error(result.error || 'GitHub login failed')
+      }
+    }
+    throw new Error('GitHub login timed out')
+  } catch (error) {
+    githubStatusMessage.value = error instanceof Error ? error.message : 'GitHub login failed'
+  } finally {
+    githubAuthPending.value = false
+  }
+}
+
+async function logoutGitHub(): Promise<void> {
+  githubStatusMessage.value = ''
+  githubAuthPending.value = true
+  try {
+    await logoutGitHubSkillsSync()
+    githubDeviceLogin.value = null
+    await loadGitHubSyncStatus()
+  } catch (error) {
+    githubStatusMessage.value = error instanceof Error ? error.message : 'GitHub logout failed'
+  } finally {
+    githubAuthPending.value = false
+  }
 }
 
 async function downloadVersion(version: string): Promise<void> {
@@ -331,13 +713,40 @@ async function downloadVersion(version: string): Promise<void> {
 }
 
 async function toggleInstalledSkill(skill: InstalledSkill): Promise<void> {
-  await setInstalledSkillEnabled(skill.path, !skill.enabled)
-  await refreshInstalledSkills()
+  busyInstalledSkillPath.value = skill.path
+  try {
+    await setInstalledSkillEnabled(skill.path, !skill.enabled)
+    await refreshInstalledSkills()
+  } finally {
+    busyInstalledSkillPath.value = ''
+  }
 }
 
 async function removeInstalledSkill(skill: InstalledSkill): Promise<void> {
-  await uninstallSkill(skill.path)
-  await refreshInstalledSkills()
+  busyInstalledSkillPath.value = skill.path
+  try {
+    await uninstallSkill(skill.path)
+    await refreshInstalledSkills()
+  } finally {
+    busyInstalledSkillPath.value = ''
+  }
+}
+
+function updateCompactViewport(): void {
+  if (typeof window === 'undefined') return
+  isCompactViewport.value = window.innerWidth <= 960
+  if (!isCompactViewport.value) {
+    isMobileDetailOpen.value = false
+  }
+}
+
+function openMobileDetailSheet(): void {
+  if (!isCompactViewport.value) return
+  isMobileDetailOpen.value = true
+}
+
+function closeMobileDetailSheet(): void {
+  isMobileDetailOpen.value = false
 }
 
 function openUrl(url: string): void {
@@ -365,8 +774,19 @@ function formatScore(value: number): string {
 }
 
 onMounted(() => {
+  updateCompactViewport()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', updateCompactViewport)
+  }
   void refreshInstalledSkills()
+  void loadGitHubSyncStatus()
   void runSearch('filesystem')
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', updateCompactViewport)
+  }
 })
 </script>
 
@@ -419,6 +839,25 @@ onMounted(() => {
 
 .skills-hub-toolbar {
   @apply flex flex-col gap-3 md:flex-row;
+}
+
+.skills-hub-installed-trigger {
+  @apply md:hidden;
+}
+
+.skills-hub-installed-trigger-count {
+  @apply inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[0.68rem];
+  background: color-mix(in srgb, var(--accent-primary) 82%, transparent);
+  color: var(--accent-on-primary);
+}
+
+.skills-hub-source-picker {
+  @apply flex min-w-0 flex-col gap-2 md:w-52;
+}
+
+.skills-hub-source-label {
+  @apply text-xs font-medium uppercase tracking-[0.18em];
+  color: var(--text-subtle);
 }
 
 .skills-hub-search-shell {
@@ -514,7 +953,7 @@ onMounted(() => {
 }
 
 .skills-hub-card {
-  @apply rounded-[1.1rem] border transition-colors duration-200;
+  @apply min-w-0 overflow-hidden rounded-[1.1rem] border transition-colors duration-200;
   border-color: var(--border-subtle);
   background: color-mix(in srgb, var(--surface-base) 86%, transparent);
 }
@@ -525,28 +964,28 @@ onMounted(() => {
 }
 
 .skills-hub-card-hit {
-  @apply flex w-full flex-col gap-3 rounded-[1.1rem] px-4 py-4 text-left;
+  @apply flex min-w-0 w-full flex-col gap-3 rounded-[1.1rem] px-4 py-4 text-left;
 }
 
 .skills-hub-card-head {
-  @apply flex items-start justify-between gap-3;
+  @apply flex min-w-0 items-start justify-between gap-3;
 }
 
 .skills-hub-card-title {
-  @apply m-0 text-sm font-semibold;
+  @apply m-0 break-words text-sm font-semibold;
   color: var(--text-default);
 }
 
 .skills-hub-card-slug,
 .skills-hub-card-meta,
 .skills-hub-card-score {
-  @apply text-xs;
+  @apply break-words text-xs;
   color: var(--text-subtle);
 }
 
 .skills-hub-card-summary,
 .skills-hub-detail-summary {
-  @apply m-0 text-sm leading-6;
+  @apply m-0 break-words text-sm leading-6;
   color: var(--text-muted);
 }
 
@@ -561,6 +1000,56 @@ onMounted(() => {
   background: color-mix(in srgb, var(--surface-base) 88%, transparent);
 }
 
+.skills-hub-github-card {
+  @apply flex min-h-40 flex-col gap-3;
+  border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-base) 88%, transparent);
+}
+
+.skills-hub-github-copy {
+  @apply m-0 text-sm leading-6;
+  color: var(--text-muted);
+}
+
+.skills-hub-github-device {
+  @apply flex flex-wrap items-center gap-2 text-sm;
+  color: var(--text-muted);
+}
+
+.skills-hub-github-device code {
+  @apply rounded-md px-2 py-1 text-xs font-semibold;
+  color: var(--text-default);
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+}
+
+.skills-hub-github-device a {
+  color: var(--accent-primary);
+}
+
+.skills-hub-github-actions {
+  @apply flex flex-wrap gap-2;
+}
+
+.skills-hub-sync-stats {
+  @apply mt-3 flex flex-col gap-2;
+}
+
+.skills-hub-sync-stat {
+  @apply rounded-[0.95rem] border px-3 py-2;
+  border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-base) 88%, transparent);
+}
+
+.skills-hub-sync-stat dt {
+  @apply text-[0.68rem] font-semibold uppercase tracking-[0.16em];
+  color: var(--text-subtle);
+}
+
+.skills-hub-sync-stat dd {
+  @apply m-0 mt-1 break-words text-sm;
+  color: var(--text-default);
+}
+
 .skills-hub-state-error {
   color: var(--status-danger);
 }
@@ -571,6 +1060,15 @@ onMounted(() => {
 
 .skills-hub-detail {
   @apply flex flex-col gap-4;
+}
+
+.skills-hub-mobile-backdrop {
+  @apply fixed inset-0 z-[69] border-0 bg-transparent;
+  backdrop-filter: blur(6px);
+}
+
+.skills-hub-mobile-sheet-head {
+  @apply hidden;
 }
 
 .skills-hub-detail-stats {
@@ -625,6 +1123,14 @@ onMounted(() => {
   font-family: var(--font-mono);
 }
 
+.skills-hub-github-readme pre {
+  @apply m-0 mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-[1rem] border px-3 py-3 text-xs leading-6;
+  border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-base) 88%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
 .skills-hub-version-list {
   @apply mt-3 flex list-none flex-col gap-2 p-0;
 }
@@ -634,23 +1140,23 @@ onMounted(() => {
 }
 
 .skills-hub-installed-item {
-  @apply flex flex-col gap-3 rounded-[1rem] border px-3 py-3 md:flex-row md:items-center md:justify-between;
+  @apply flex min-w-0 flex-col gap-3 rounded-[1rem] border px-3 py-3 md:flex-row md:items-center md:justify-between;
   border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
   background: color-mix(in srgb, var(--surface-base) 88%, transparent);
 }
 
 .skills-hub-installed-item strong {
-  @apply text-sm font-semibold;
+  @apply block break-words text-sm font-semibold;
   color: var(--text-default);
 }
 
 .skills-hub-installed-item p {
-  @apply m-1 text-xs leading-5;
+  @apply m-1 break-words text-xs leading-5;
   color: var(--text-muted);
 }
 
 .skills-hub-version-item {
-  @apply flex items-center justify-between gap-3 rounded-[1rem] border px-3 py-3;
+  @apply flex min-w-0 items-center justify-between gap-3 rounded-[1rem] border px-3 py-3;
   border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
   background: color-mix(in srgb, var(--surface-base) 88%, transparent);
 }
@@ -663,6 +1169,62 @@ onMounted(() => {
 @media (max-width: 960px) {
   .skills-hub {
     @apply px-2 pb-5 pt-3;
+  }
+
+  .skills-hub-layout {
+    @apply block;
+  }
+
+  .skills-hub-results {
+    @apply p-3;
+  }
+
+  .skills-hub-detail {
+    @apply mt-4 p-3;
+  }
+
+  .skills-hub-detail-sheet {
+    @apply fixed inset-x-0 bottom-0 z-[80] max-h-[82dvh] translate-y-full overflow-y-auto rounded-t-[1.5rem] border-t px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 transition-transform duration-200;
+    border-color: var(--border-subtle);
+    background: color-mix(in srgb, var(--surface-elevated) 98%, transparent);
+    box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.34);
+  }
+
+  .skills-hub-detail-sheet-open {
+    transform: translateY(0);
+  }
+
+  .skills-hub-mobile-sheet-head {
+    @apply sticky top-0 z-[1] mb-3 flex items-start justify-between gap-3 border-b pb-3;
+    border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
+    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  }
+
+  .skills-hub-github-card,
+  .skills-hub-section-card {
+    @apply min-w-0;
+  }
+
+  .skills-hub-card-head,
+  .skills-hub-results-header,
+  .skills-hub-detail-head,
+  .skills-hub-section-head {
+    @apply flex-col items-start;
+  }
+
+  .skills-hub-detail-actions,
+  .skills-hub-installed-actions,
+  .skills-hub-github-actions {
+    @apply w-full justify-start;
+  }
+
+  .skills-hub-card-score {
+    @apply whitespace-nowrap;
+  }
+
+  .skills-hub-github-readme pre,
+  .skills-hub-changelog {
+    @apply max-h-64;
   }
 
   .skills-hub-detail-stats {

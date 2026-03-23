@@ -18,6 +18,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -75,6 +76,7 @@ class MainActivity : AppCompatActivity() {
     private val openClawWatchdogHandler = Handler(Looper.getMainLooper())
     private var openClawWatchdogRunnable: Runnable? = null
     private var openClawRecoveryAttempts = 0
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     private val serverPort: Int
         get() = serverManager.serverPort
     private val openClawGatewayPort: Int
@@ -107,6 +109,26 @@ class MainActivity : AppCompatActivity() {
             } else {
                 showStoragePermissionDialog()
             }
+        }
+
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = pendingFileChooser ?: return@registerForActivityResult
+            pendingFileChooser = null
+            if (result.resultCode != RESULT_OK) {
+                callback.onReceiveValue(null)
+                return@registerForActivityResult
+            }
+            val intent = result.data
+            val uris = mutableListOf<Uri>()
+            intent?.data?.let { uris.add(it) }
+            val clipData = intent?.clipData
+            if (clipData != null) {
+                for (index in 0 until clipData.itemCount) {
+                    clipData.getItemAt(index)?.uri?.let { uris.add(it) }
+                }
+            }
+            callback.onReceiveValue(uris.distinct().takeIf { it.isNotEmpty() }?.toTypedArray())
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -304,6 +326,59 @@ class MainActivity : AppCompatActivity() {
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
                 Log.d(TAG, "[WebView] ${msg.sourceId()}:${msg.lineNumber()} ${msg.message()}")
                 return true
+            }
+
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?,
+            ): Boolean {
+                if (filePathCallback == null) return false
+                pendingFileChooser?.onReceiveValue(null)
+                pendingFileChooser = filePathCallback
+
+                val chooserIntent =
+                    try {
+                        val baseIntent =
+                            fileChooserParams?.createIntent()?.apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                putExtra(
+                                    Intent.EXTRA_ALLOW_MULTIPLE,
+                                    fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE,
+                                )
+                            }
+                                ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "image/*"
+                                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                                }
+                        if (baseIntent.type.isNullOrBlank()) {
+                            baseIntent.type = "image/*"
+                        }
+                        baseIntent
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to create file chooser intent: ${e.message}")
+                        Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "image/*"
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                    }
+
+                return try {
+                    fileChooserLauncher.launch(chooserIntent)
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to launch file chooser", e)
+                    pendingFileChooser = null
+                    filePathCallback.onReceiveValue(null)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Could not open the file picker.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    false
+                }
             }
         }
     }

@@ -6,8 +6,8 @@
     </span>
     <SwitchRoot
       class="ui-switch-root"
-      :model-value="modelValue"
-      @update:model-value="onChange"
+      :checked="modelValue"
+      @update:checked="onChange"
     >
       <SwitchThumb class="ui-switch-thumb" />
     </SwitchRoot>
@@ -36,7 +36,7 @@ function onChange(value: boolean): void {
 @reference "tailwindcss";
 
 .ui-switch-row {
-  @apply flex items-center justify-between gap-4 rounded-2xl border px-4 py-3;
+  @apply grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border px-4 py-3;
   border-color: var(--border-subtle);
   background: color-mix(in srgb, var(--surface-elevated) 90%, transparent);
 }
@@ -46,12 +46,12 @@ function onChange(value: boolean): void {
 }
 
 .ui-switch-label {
-  @apply text-sm font-semibold;
+  @apply break-words text-sm font-semibold;
   color: var(--text-default);
 }
 
 .ui-switch-description {
-  @apply text-xs leading-5;
+  @apply break-words text-xs leading-5;
   color: var(--text-muted);
 }
 

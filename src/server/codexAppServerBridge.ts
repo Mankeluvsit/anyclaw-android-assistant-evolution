@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, dirname, basename, normalize } from 'node:path'
@@ -11,6 +11,10 @@ const promptInjectionPath = homeDir ? join(homeDir, '.openclaw-android', 'state'
 const shizukuStatusPath = homeDir ? join(homeDir, '.openclaw-android', 'capabilities', 'shizuku.json') : ''
 const openClawStateDir = homeDir ? join(homeDir, '.openclaw-android', 'state') : ''
 const clawHubBaseUrl = (process.env.CLAWHUB_BASE_URL?.trim() || 'https://clawhub.ai').replace(/\/+$/u, '')
+const GITHUB_DEVICE_CLIENT_ID = 'Iv1.b507a08c87ecfe98'
+const GITHUB_HUB_OWNER = 'openclaw'
+const GITHUB_HUB_REPO = 'skills'
+const DEFAULT_WORKSPACES_DIR = homeDir ? join(homeDir, 'workspaces') : join(tmpdir(), 'workspaces')
 
 type JsonRpcCall = {
   jsonrpc: '2.0'
@@ -156,6 +160,30 @@ function normalizePositiveInteger(value: string, fallback: number, max: number):
   return Math.min(max, parsed)
 }
 
+function sanitizeWorkspaceName(value: string): string {
+  return value.trim().replace(/[\\/]+/gu, '-').replace(/\s+/gu, '-').replace(/[^a-zA-Z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '')
+}
+
+async function ensureDefaultWorkspaceRoot(): Promise<string> {
+  await mkdir(DEFAULT_WORKSPACES_DIR, { recursive: true })
+  return DEFAULT_WORKSPACES_DIR
+}
+
+async function createWorkspaceDirectory(name: string): Promise<{ name: string; cwd: string }> {
+  const normalizedName = sanitizeWorkspaceName(name)
+  if (!normalizedName) {
+    throw new Error('Workspace name is required')
+  }
+
+  const root = await ensureDefaultWorkspaceRoot()
+  const target = join(root, normalizedName)
+  await mkdir(target, { recursive: false })
+  return {
+    name: normalizedName,
+    cwd: target,
+  }
+}
+
 async function fetchClawHubJson(path: string, params: URLSearchParams): Promise<unknown> {
   const target = new URL(`${clawHubBaseUrl}${path}`)
   target.search = params.toString()
@@ -208,6 +236,117 @@ async function fetchClawHubText(path: string, params: URLSearchParams): Promise<
   }
 
   return response.text()
+}
+
+async function fetchGitHubJson(path: string): Promise<unknown> {
+  const target = new URL(`https://api.github.com${path}`)
+  const response = await fetch(target, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'AnyClaw-Debug/1.0',
+    },
+  })
+
+  if (!response.ok) {
+    let detail = ''
+    try {
+      detail = (await response.text()).trim()
+    } catch {
+      detail = ''
+    }
+    throw new Error(detail || `GitHub request failed with HTTP ${String(response.status)}`)
+  }
+
+  return response.json()
+}
+
+async function runCommand(command: string, args: string[], cwd?: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let stderr = ''
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+        return
+      }
+      reject(new Error(stderr.trim() || `${command} exited with code ${String(code ?? -1)}`))
+    })
+  })
+}
+
+function parseGitHubSkillReference(reference: string): { owner: string; repo: string; path: string } {
+  const raw = normalizeText(reference)
+  if (!raw) {
+    throw new Error('Missing GitHub reference')
+  }
+
+  const normalized = raw
+    .replace(/^https?:\/\/github\.com\//u, '')
+    .replace(/^github\.com\//u, '')
+    .replace(/\/+$/u, '')
+
+  const parts = normalized.split('/').filter(Boolean)
+  if (parts.length < 2) {
+    throw new Error('GitHub reference must include owner and repo')
+  }
+
+  const owner = parts[0] ?? ''
+  const repo = parts[1] ?? ''
+  if (!owner || !repo) {
+    throw new Error('GitHub reference must include owner and repo')
+  }
+
+  let path = ''
+  if (parts[2] === 'tree' || parts[2] === 'blob') {
+    path = parts.slice(4).join('/')
+  } else {
+    path = parts.slice(2).join('/')
+  }
+
+  return {
+    owner,
+    repo: repo.replace(/\.git$/u, ''),
+    path,
+  }
+}
+
+function sanitizeSkillDirectoryName(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '')
+  return normalized || 'github-skill'
+}
+
+async function findSkillRoot(rootDir: string): Promise<string | null> {
+  try {
+    await readFile(join(rootDir, 'SKILL.md'), 'utf8')
+    return rootDir
+  } catch {
+    // continue
+  }
+
+  const entries = await readdir(rootDir, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const childPath = join(rootDir, entry.name)
+    try {
+      await readFile(join(childPath, 'SKILL.md'), 'utf8')
+      return childPath
+    } catch {
+      // continue
+    }
+  }
+
+  return null
 }
 
 type SkillsListPayload = {
@@ -263,6 +402,202 @@ function getUserSkillsDir(): string {
   return join(getCodexHomeDir(), 'skills')
 }
 
+function getSkillsSyncStatePath(): string {
+  return join(getCodexHomeDir(), 'skills-sync.json')
+}
+
+type SkillsSyncState = {
+  githubToken?: string
+  githubUsername?: string
+  repoOwner?: string
+  repoName?: string
+}
+
+type GitHubHubSkill = {
+  name: string
+  owner: string
+  description: string
+  displayName: string
+  publishedAt: number
+  avatarUrl: string
+  url: string
+  installed: boolean
+}
+
+type GithubDeviceCodeResponse = {
+  device_code: string
+  user_code: string
+  verification_uri: string
+  expires_in: number
+  interval: number
+}
+
+type GithubTokenResponse = {
+  access_token?: string
+  error?: string
+}
+
+const githubHubCache = {
+  fetchedAt: 0,
+  items: [] as GitHubHubSkill[],
+}
+
+async function readSkillsSyncState(): Promise<SkillsSyncState> {
+  const parsed = await readJsonFile(getSkillsSyncStatePath())
+  return parsed ? (parsed as SkillsSyncState) : {}
+}
+
+async function writeSkillsSyncState(state: SkillsSyncState): Promise<void> {
+  await mkdir(dirname(getSkillsSyncStatePath()), { recursive: true })
+  await writeFile(getSkillsSyncStatePath(), JSON.stringify(state), 'utf8')
+}
+
+async function getGitHubApiJson<T>(url: string, token?: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'AnyClaw-Debug/1.0',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  if (!response.ok) {
+    const detail = (await response.text()).trim()
+    throw new Error(detail || `GitHub API ${method} failed with HTTP ${String(response.status)}`)
+  }
+
+  return response.json() as Promise<T>
+}
+
+async function resolveGitHubUsername(token: string): Promise<string> {
+  const payload = await getGitHubApiJson<{ login?: string }>('https://api.github.com/user', token)
+  const login = normalizeText(payload.login)
+  if (!login) {
+    throw new Error('GitHub username unavailable')
+  }
+  return login
+}
+
+async function startGitHubDeviceLogin(): Promise<GithubDeviceCodeResponse> {
+  const response = await fetch('https://github.com/login/device/code', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'AnyClaw-Debug/1.0',
+    },
+    body: new URLSearchParams({
+      client_id: GITHUB_DEVICE_CLIENT_ID,
+      scope: 'repo read:user',
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`GitHub device login failed with HTTP ${String(response.status)}`)
+  }
+
+  return response.json() as Promise<GithubDeviceCodeResponse>
+}
+
+async function completeGitHubDeviceLogin(deviceCode: string): Promise<{ token: string | null; error: string | null }> {
+  const response = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'AnyClaw-Debug/1.0',
+    },
+    body: new URLSearchParams({
+      client_id: GITHUB_DEVICE_CLIENT_ID,
+      device_code: deviceCode,
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`GitHub token exchange failed with HTTP ${String(response.status)}`)
+  }
+
+  const payload = await response.json() as GithubTokenResponse
+  return {
+    token: normalizeText(payload.access_token) || null,
+    error: normalizeText(payload.error) || null,
+  }
+}
+
+async function fetchGitHubHubSkills(): Promise<GitHubHubSkill[]> {
+  const now = Date.now()
+  if (githubHubCache.fetchedAt > 0 && now - githubHubCache.fetchedAt < 5 * 60 * 1000) {
+    return githubHubCache.items
+  }
+
+  const tree = await fetchGitHubJson(`/repos/${GITHUB_HUB_OWNER}/${GITHUB_HUB_REPO}/git/trees/main?recursive=1`) as {
+    tree?: Array<{ path?: string; type?: string }>
+  }
+
+  const pattern = /^skills\/([^/]+)\/([^/]+)\/_meta\.json$/u
+  const metaEntries = (tree.tree ?? []).flatMap((entry) => {
+    const match = pattern.exec(normalizeText(entry.path))
+    if (!match) return []
+    const owner = match[1] ?? ''
+    const name = match[2] ?? ''
+    return owner && name ? [{ owner, name }] : []
+  })
+
+  const installedNames = new Set<string>()
+  try {
+    const entries = await readdir(getUserSkillsDir(), { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      try {
+        await readFile(join(getUserSkillsDir(), entry.name, 'SKILL.md'), 'utf8')
+        installedNames.add(entry.name)
+      } catch {
+        // ignore invalid entries
+      }
+    }
+  } catch {
+    // ignore missing skill dir
+  }
+
+  const items = await Promise.all(metaEntries.slice(0, 200).map(async ({ owner, name }) => {
+    let meta: Record<string, unknown> | null = null
+    try {
+      const response = await fetch(`https://raw.githubusercontent.com/${GITHUB_HUB_OWNER}/${GITHUB_HUB_REPO}/main/skills/${owner}/${name}/_meta.json`, {
+        headers: { 'User-Agent': 'AnyClaw-Debug/1.0' },
+      })
+      if (response.ok) {
+        meta = asRecord(await response.json())
+      }
+    } catch {
+      meta = null
+    }
+
+    const displayName = normalizeText(meta?.displayName) || name
+    const description = normalizeText(meta?.description) || displayName
+    const latest = asRecord(meta?.latest)
+    const publishedAt = typeof latest?.publishedAt === 'number' ? latest.publishedAt : 0
+
+    return {
+      name,
+      owner,
+      description,
+      displayName,
+      publishedAt,
+      avatarUrl: `https://github.com/${owner}.png?size=40`,
+      url: `https://github.com/${GITHUB_HUB_OWNER}/${GITHUB_HUB_REPO}/tree/main/skills/${owner}/${name}`,
+      installed: installedNames.has(name),
+    } satisfies GitHubHubSkill
+  }))
+
+  githubHubCache.fetchedAt = now
+  githubHubCache.items = items.sort((left, right) => (right.publishedAt || 0) - (left.publishedAt || 0))
+  return githubHubCache.items
+}
+
 async function installClawHubSkillToDisk(
   slug: string,
   version: string,
@@ -300,6 +635,68 @@ async function installClawHubSkillToDisk(
 
   const skillFilePath = join(installDir, 'SKILL.md')
   return { installDir, skillFilePath }
+}
+
+async function installGitHubSkillToDisk(reference: string): Promise<{ installDir: string; skillFilePath: string }> {
+  const parsed = parseGitHubSkillReference(reference)
+  const repoMeta = await fetchGitHubJson(`/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`) as {
+    default_branch?: string
+  }
+  const branch = normalizeText(repoMeta.default_branch) || 'main'
+
+  const tempDir = await mkdtemp(join(tmpdir(), 'anyclaw-github-skill-'))
+  const archivePath = join(tempDir, 'repo.tar.gz')
+  const extractDir = join(tempDir, 'extract')
+  await mkdir(extractDir, { recursive: true })
+
+  try {
+    const archiveResponse = await fetch(
+      `https://codeload.github.com/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/tar.gz/refs/heads/${encodeURIComponent(branch)}`,
+      {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(20000),
+        headers: {
+          Accept: 'application/octet-stream',
+          'User-Agent': 'AnyClaw-Debug/1.0',
+        },
+      },
+    )
+
+    if (!archiveResponse.ok) {
+      throw new Error(`GitHub archive request failed with HTTP ${String(archiveResponse.status)}`)
+    }
+
+    const archiveBytes = Buffer.from(await archiveResponse.arrayBuffer())
+    await writeFile(archivePath, archiveBytes)
+
+    const tarCommand = prefixBin ? join(prefixBin, 'tar') : 'tar'
+    await runCommand(tarCommand, ['-xzf', archivePath, '-C', extractDir])
+
+    const extractedEntries = await readdir(extractDir, { withFileTypes: true })
+    const rootEntry = extractedEntries.find((entry) => entry.isDirectory())
+    if (!rootEntry) {
+      throw new Error('GitHub archive did not contain an extractable root directory')
+    }
+
+    const archiveRoot = join(extractDir, rootEntry.name)
+    const candidateRoot = parsed.path ? join(archiveRoot, parsed.path) : archiveRoot
+    const skillRoot = await findSkillRoot(candidateRoot)
+    if (!skillRoot) {
+      throw new Error('No SKILL.md was found in the requested GitHub source')
+    }
+
+    const targetName = sanitizeSkillDirectoryName(parsed.path ? basename(parsed.path) : parsed.repo)
+    const installDir = join(getUserSkillsDir(), targetName)
+    await rm(installDir, { recursive: true, force: true })
+    await mkdir(dirname(installDir), { recursive: true })
+    await cp(skillRoot, installDir, { recursive: true })
+
+    const skillFilePath = join(installDir, 'SKILL.md')
+    await readFile(skillFilePath, 'utf8')
+    return { installDir, skillFilePath }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true })
+  }
 }
 
 function buildCapabilitySummary(statusRecord: Record<string, unknown> | null): string {
@@ -862,6 +1259,127 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-sync/status') {
+        const state = await readSkillsSyncState()
+        setJson(res, 200, {
+          data: {
+            loggedIn: Boolean(state.githubToken),
+            githubUsername: state.githubUsername ?? '',
+            repoOwner: state.repoOwner ?? '',
+            repoName: state.repoName ?? '',
+            configured: Boolean(state.githubToken && state.repoOwner && state.repoName),
+            startup: {
+              inProgress: false,
+              mode: 'idle',
+              branch: 'main',
+              lastAction: 'idle',
+              lastRunAtIso: '',
+              lastSuccessAtIso: '',
+              lastError: '',
+            },
+          },
+        })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-sync/github/start-login') {
+        const payload = await startGitHubDeviceLogin()
+        setJson(res, 200, { data: payload })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-sync/github/complete-login') {
+        const body = asRecord(await readJsonBody(req))
+        const deviceCode = normalizeText(body?.deviceCode)
+        if (!deviceCode) {
+          setJson(res, 400, { error: 'Missing deviceCode' })
+          return
+        }
+
+        const result = await completeGitHubDeviceLogin(deviceCode)
+        if (!result.token) {
+          setJson(res, 200, { ok: false, pending: result.error === 'authorization_pending', error: result.error || 'login_failed' })
+          return
+        }
+
+        const githubUsername = await resolveGitHubUsername(result.token)
+        await writeSkillsSyncState({
+          githubToken: result.token,
+          githubUsername,
+          repoOwner: githubUsername,
+          repoName: 'codexskills',
+        })
+        setJson(res, 200, { ok: true, data: { githubUsername } })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-sync/github/logout') {
+        await writeSkillsSyncState({})
+        setJson(res, 200, { ok: true })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/workspaces/default-root') {
+        const root = await ensureDefaultWorkspaceRoot()
+        setJson(res, 200, { data: { root } })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/workspaces/create') {
+        const body = asRecord(await readJsonBody(req))
+        const name = normalizeText(body?.name)
+        if (!name) {
+          setJson(res, 400, { error: 'Missing workspace name' })
+          return
+        }
+        const workspace = await createWorkspaceDirectory(name)
+        setJson(res, 200, { data: workspace })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/github') {
+        const query = normalizeText(url.searchParams.get('q')).toLowerCase()
+        const limit = normalizePositiveInteger(url.searchParams.get('limit') || '60', 60, 200)
+        const items = await fetchGitHubHubSkills()
+        const filtered = query
+          ? items.filter((item) =>
+              item.name.toLowerCase().includes(query)
+              || item.owner.toLowerCase().includes(query)
+              || item.displayName.toLowerCase().includes(query)
+              || item.description.toLowerCase().includes(query),
+            )
+          : items
+        setJson(res, 200, { data: filtered.slice(0, limit) })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-hub/github/install') {
+        const body = asRecord(await readJsonBody(req))
+        const owner = normalizeText(body?.owner)
+        const name = normalizeText(body?.name)
+        if (!owner || !name) {
+          setJson(res, 400, { error: 'Missing owner or name' })
+          return
+        }
+
+        const installedBefore = await readInstalledSkills(appServer)
+        const beforeSet = new Set(installedBefore.map((entry) => entry.path))
+        const reference = `${GITHUB_HUB_OWNER}/${GITHUB_HUB_REPO}/tree/main/skills/${owner}/${name}`
+        const { skillFilePath } = await installGitHubSkillToDisk(reference)
+        const installedAfter = await readInstalledSkills(appServer, true)
+        const installedEntry =
+          installedAfter.find((entry) => entry.path === skillFilePath)
+          ?? installedAfter.find((entry) => !beforeSet.has(entry.path) && entry.name === name)
+          ?? installedAfter.find((entry) => entry.name === name)
+
+        if (!installedEntry) {
+          throw new Error('GitHub skill files were copied, but Codex did not register the skill')
+        }
+
+        setJson(res, 200, { ok: true, name: installedEntry.name, path: installedEntry.path })
+        return
+      }
+
       if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/search') {
         const query = normalizeText(url.searchParams.get('q'))
         if (!query) {
@@ -976,6 +1494,34 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
         if (!installedEntry) {
           throw new Error('Skill files were downloaded, but Codex did not register the skill')
+        }
+
+        setJson(res, 200, {
+          ok: true,
+          name: installedEntry.name,
+          path: installedEntry.path,
+        })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-hub/install-github') {
+        const body = asRecord(await readJsonBody(req))
+        const reference = normalizeText(body?.reference)
+        if (!reference) {
+          setJson(res, 400, { error: 'Missing GitHub reference' })
+          return
+        }
+
+        const installedBefore = await readInstalledSkills(appServer)
+        const beforeSet = new Set(installedBefore.map((entry) => entry.path))
+        const { skillFilePath } = await installGitHubSkillToDisk(reference)
+        const installedAfter = await readInstalledSkills(appServer, true)
+        const installedEntry =
+          installedAfter.find((entry) => entry.path === skillFilePath)
+          ?? installedAfter.find((entry) => !beforeSet.has(entry.path))
+
+        if (!installedEntry) {
+          throw new Error('GitHub skill files were copied, but Codex did not register the skill')
         }
 
         setJson(res, 200, {

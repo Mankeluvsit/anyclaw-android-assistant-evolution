@@ -1,11 +1,6 @@
 <template>
   <section class="thread-composer">
     <div class="thread-composer-shell">
-      <div class="thread-composer-badge-row">
-        <span class="thread-composer-badge">Updated composer</span>
-        <span class="thread-composer-badge-copy">Multiline, drafts, attachments</span>
-      </div>
-
       <div v-if="editMessageLabel" class="thread-composer-editing">
         <span class="thread-composer-editing-label">{{ editMessageLabel }}</span>
         <button class="thread-composer-editing-dismiss" type="button" @click="onCancelEdit">
@@ -47,6 +42,19 @@
         </article>
       </div>
 
+      <div v-if="selectedSkills.length > 0" class="thread-composer-skills">
+        <button
+          v-for="skill in selectedSkills"
+          :key="skill.path"
+          class="thread-composer-skill-chip"
+          type="button"
+          @click="toggleSkill(skill)"
+        >
+          <span class="thread-composer-skill-chip-label">{{ skill.name }}</span>
+          <IconTablerX class="thread-composer-skill-chip-remove" />
+        </button>
+      </div>
+
       <div class="thread-composer-controls">
         <label
           class="thread-composer-attach"
@@ -65,6 +73,17 @@
           />
           <IconTablerPaperclip class="thread-composer-attach-icon" />
         </label>
+
+        <button
+          class="thread-composer-skills-button"
+          type="button"
+          :data-active="isSkillsPanelOpen"
+          :disabled="disabled || !activeThreadId || availableSkills.length === 0 || isTurnInProgress"
+          @click="isSkillsPanelOpen = !isSkillsPanelOpen"
+        >
+          <span>{{ t('composer_skills') }}</span>
+          <span v-if="selectedSkills.length > 0" class="thread-composer-skills-count">{{ selectedSkills.length }}</span>
+        </button>
 
         <ComposerDropdown
           class="thread-composer-control"
@@ -109,13 +128,43 @@
           <IconTablerArrowUp class="thread-composer-submit-icon" />
         </button>
       </div>
+
+      <div v-if="isSkillsPanelOpen" class="thread-composer-skills-panel">
+        <div class="thread-composer-skills-panel-head">
+          <strong>{{ t('composer_skills_panel_title') }}</strong>
+          <span class="thread-composer-skills-meta">{{ selectedSkills.length }} / {{ availableSkills.length }}</span>
+        </div>
+        <div v-if="availableSkills.length === 0" class="thread-composer-skills-empty">
+          {{ t('composer_skills_empty') }}
+        </div>
+        <div v-else class="thread-composer-skills-list">
+          <button
+            v-for="skill in availableSkills"
+            :key="skill.path"
+            class="thread-composer-skill-option"
+            :data-selected="isSkillSelected(skill)"
+            type="button"
+            @click="toggleSkill(skill)"
+          >
+            <div class="thread-composer-skill-option-copy">
+              <strong>{{ skill.name }}</strong>
+              <p>{{ skill.shortDescription || skill.description || skill.path }}</p>
+            </div>
+            <span class="thread-composer-skill-option-state">
+              {{ isSkillSelected(skill) ? t('composer_skill_selected') : t('composer_skill_add') }}
+            </span>
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { ComposerImageAttachment, ReasoningEffort } from '../../types/codex'
+import { getInstalledSkills } from '../../api/skillsHub'
+import type { InstalledSkill } from '../../types/skillsHub'
+import type { ComposerImageAttachment, ComposerSkillSelection, ReasoningEffort } from '../../types/codex'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerPaperclip from '../icons/IconTablerPaperclip.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
@@ -128,6 +177,7 @@ import { useUiSettings } from '../../composables/useUiSettings'
 const { t } = useUiI18n()
 const { settings } = useUiSettings()
 const DRAFT_STORAGE_KEY = 'codex-web-local.thread-drafts.v1'
+const SKILL_STORAGE_KEY = 'codex-web-local.thread-skills.v1'
 
 const props = defineProps<{
   activeThreadId: string
@@ -142,7 +192,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  submit: [payload: { text: string; attachments: ComposerImageAttachment[] }]
+  submit: [payload: { text: string; attachments: ComposerImageAttachment[]; skills: ComposerSkillSelection[] }]
   interrupt: []
   cancelEdit: []
   'update:selected-model': [modelId: string]
@@ -152,6 +202,9 @@ const emit = defineEmits<{
 const draft = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const attachments = ref<ComposerImageAttachment[]>([])
+const availableSkills = ref<InstalledSkill[]>([])
+const selectedSkills = ref<ComposerSkillSelection[]>([])
+const isSkillsPanelOpen = ref(false)
 const reasoningOptions = computed<Array<{ value: ReasoningEffort; label: string }>>(() => [
   { value: 'none', label: t('thinking_none') },
   { value: 'minimal', label: t('thinking_minimal') },
@@ -168,7 +221,7 @@ const canSubmit = computed(() => {
   if (props.disabled) return false
   if (!props.activeThreadId) return false
   if (props.isTurnInProgress) return false
-  return draft.value.trim().length > 0 || attachments.value.length > 0
+  return draft.value.trim().length > 0 || attachments.value.length > 0 || selectedSkills.value.length > 0
 })
 
 const placeholderText = computed(() =>
@@ -178,7 +231,7 @@ const placeholderText = computed(() =>
 function onSubmit(): void {
   const text = draft.value.trim()
   if (!canSubmit.value) return
-  emit('submit', { text, attachments: attachments.value })
+  emit('submit', { text, attachments: attachments.value, skills: selectedSkills.value })
   draft.value = ''
   revokeAttachmentUrls()
   attachments.value = []
@@ -216,6 +269,20 @@ function readStoredDrafts(): Record<string, string> {
   }
 }
 
+function readStoredSkills(): Record<string, ComposerSkillSelection[]> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(SKILL_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, ComposerSkillSelection[]>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
 function persistDraft(value: string): void {
   if (typeof window === 'undefined' || !props.activeThreadId) return
   const nextDrafts = {
@@ -226,6 +293,18 @@ function persistDraft(value: string): void {
     delete nextDrafts[props.activeThreadId]
   }
   window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(nextDrafts))
+}
+
+function persistSelectedSkills(skills: ComposerSkillSelection[]): void {
+  if (typeof window === 'undefined' || !props.activeThreadId) return
+  const next = {
+    ...readStoredSkills(),
+    [props.activeThreadId]: skills,
+  }
+  if (skills.length === 0) {
+    delete next[props.activeThreadId]
+  }
+  window.localStorage.setItem(SKILL_STORAGE_KEY, JSON.stringify(next))
 }
 
 function syncTextareaHeight(): void {
@@ -283,6 +362,26 @@ function removeAttachment(attachmentId: string): void {
   attachments.value = attachments.value.filter((attachment) => attachment.id !== attachmentId)
 }
 
+function isSkillSelected(skill: InstalledSkill | ComposerSkillSelection): boolean {
+  return selectedSkills.value.some((entry) => entry.path === skill.path)
+}
+
+function toggleSkill(skill: InstalledSkill | ComposerSkillSelection): void {
+  if (isSkillSelected(skill)) {
+    selectedSkills.value = selectedSkills.value.filter((entry) => entry.path !== skill.path)
+    return
+  }
+  selectedSkills.value = [
+    ...selectedSkills.value,
+    {
+      name: skill.name,
+      path: skill.path,
+      description: 'description' in skill ? skill.description : undefined,
+      enabled: 'enabled' in skill ? skill.enabled : undefined,
+    },
+  ]
+}
+
 function revokeAttachmentUrls(): void {
   // Data URLs do not need explicit cleanup.
 }
@@ -301,10 +400,12 @@ watch(
   (threadId) => {
     if (!threadId) {
       draft.value = ''
+      selectedSkills.value = []
       syncTextareaHeight()
       return
     }
     draft.value = readStoredDrafts()[threadId] ?? ''
+    selectedSkills.value = readStoredSkills()[threadId] ?? []
     syncTextareaHeight()
   },
   { immediate: true },
@@ -334,7 +435,24 @@ watch(
   () => {
     revokeAttachmentUrls()
     attachments.value = []
+    isSkillsPanelOpen.value = false
   },
+)
+
+watch(selectedSkills, (next) => {
+  persistSelectedSkills(next)
+}, { deep: true })
+
+watch(
+  () => props.activeThreadId,
+  async () => {
+    try {
+      availableSkills.value = await getInstalledSkills()
+    } catch {
+      availableSkills.value = []
+    }
+  },
+  { immediate: true },
 )
 </script>
 
@@ -346,25 +464,10 @@ watch(
 }
 
 .thread-composer-shell {
-  @apply rounded-2xl border p-3;
+  @apply rounded-2xl border p-2.5;
   border-color: var(--border-subtle);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
-}
-
-.thread-composer-badge-row {
-  @apply mb-3 flex flex-wrap items-center gap-2;
-}
-
-.thread-composer-badge {
-  @apply inline-flex items-center rounded-full px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em];
-  color: var(--accent-on-primary);
-  background: var(--accent-primary);
-}
-
-.thread-composer-badge-copy {
-  @apply text-xs font-medium;
-  color: var(--text-muted);
 }
 
 .thread-composer-editing {
@@ -402,6 +505,25 @@ watch(
 
 .thread-composer-attachments {
   @apply mt-3 flex flex-wrap gap-2;
+}
+
+.thread-composer-skills {
+  @apply mt-3 flex flex-wrap gap-2;
+}
+
+.thread-composer-skill-chip {
+  @apply inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs;
+  border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--surface-elevated));
+  color: var(--text-default);
+}
+
+.thread-composer-skill-chip-label {
+  @apply max-w-42 truncate font-medium;
+}
+
+.thread-composer-skill-chip-remove {
+  @apply h-3.5 w-3.5;
 }
 
 .thread-composer-attachment {
@@ -476,6 +598,76 @@ watch(
 
 .thread-composer-control {
   @apply shrink-0;
+}
+
+.thread-composer-skills-button {
+  @apply inline-flex h-9 shrink-0 items-center gap-2 rounded-full border-0 px-3 text-xs font-semibold transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60;
+  background: var(--surface-hover);
+  color: var(--text-default);
+}
+
+.thread-composer-skills-button[data-active='true'] {
+  background: color-mix(in srgb, var(--accent-primary) 14%, var(--surface-hover));
+}
+
+.thread-composer-skills-count {
+  @apply inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[0.68rem];
+  background: color-mix(in srgb, var(--accent-primary) 82%, transparent);
+  color: var(--accent-on-primary);
+}
+
+.thread-composer-skills-panel {
+  @apply mt-3 rounded-2xl border px-3 py-3;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-base) 96%, transparent);
+}
+
+.thread-composer-skills-panel-head {
+  @apply mb-2 flex items-center justify-between gap-3;
+}
+
+.thread-composer-skills-meta {
+  @apply text-xs;
+  color: var(--text-muted);
+}
+
+.thread-composer-skills-empty {
+  @apply rounded-xl border border-dashed px-3 py-4 text-center text-sm;
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.thread-composer-skills-list {
+  @apply flex max-h-52 flex-col gap-2 overflow-y-auto pr-1;
+}
+
+.thread-composer-skill-option {
+  @apply flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-3 text-left;
+  border-color: var(--border-subtle);
+  background: var(--surface-elevated);
+}
+
+.thread-composer-skill-option[data-selected='true'] {
+  border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-strong));
+}
+
+.thread-composer-skill-option-copy {
+  @apply min-w-0 flex-1;
+}
+
+.thread-composer-skill-option-copy strong {
+  @apply block truncate text-sm;
+  color: var(--text-default);
+}
+
+.thread-composer-skill-option-copy p {
+  @apply mt-1 break-words text-xs leading-5;
+  color: var(--text-muted);
+}
+
+.thread-composer-skill-option-state {
+  @apply shrink-0 text-[0.68rem] font-semibold uppercase tracking-[0.16em];
+  color: var(--text-subtle);
 }
 
 .thread-composer-submit {
