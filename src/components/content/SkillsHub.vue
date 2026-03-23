@@ -38,7 +38,7 @@
         v-if="isCompactViewport"
         variant="surface"
         class="skills-hub-installed-trigger"
-        @click="openMobileDetailSheet()"
+        @click="scrollDetailIntoView()"
       >
         {{ t('skills_hub_manage_installed') }}
         <span v-if="installedSkills.length > 0" class="skills-hub-installed-trigger-count">{{ installedSkills.length }}</span>
@@ -108,9 +108,9 @@
               <div v-if="githubDeviceLogin" class="skills-hub-github-device">
                 <span>{{ t('skills_hub_github_device_code') }}</span>
                 <code>{{ githubDeviceLogin.user_code }}</code>
-                <a :href="githubDeviceLogin.verification_uri" target="_blank" rel="noreferrer">
+                <button type="button" class="skills-hub-github-link" @click="openUrl(githubDeviceLogin.verification_uri)">
                   {{ t('skills_hub_github_device_open') }}
-                </a>
+                </button>
               </div>
               <div class="skills-hub-github-actions">
                 <UiButton v-if="!githubSyncStatus.loggedIn" variant="surface" :disabled="githubAuthPending" @click="startGithubDeviceFlow">
@@ -212,25 +212,16 @@
         </div>
       </section>
 
-      <button
-        v-if="isCompactViewport && isMobileDetailOpen"
-        class="skills-hub-mobile-backdrop"
-        type="button"
-        :aria-label="t('skills_hub_detail_sheet_close')"
-        @click="closeMobileDetailSheet"
-      />
       <aside
+        ref="detailPanelRef"
         class="skills-hub-detail"
-        :class="{ 'skills-hub-detail-sheet': isCompactViewport, 'skills-hub-detail-sheet-open': isCompactViewport && isMobileDetailOpen }"
+        :class="{ 'skills-hub-detail-inline': isCompactViewport }"
       >
         <header v-if="isCompactViewport" class="skills-hub-mobile-sheet-head">
           <div>
             <p class="skills-hub-detail-slug">{{ t('skills_hub_detail_sheet_title') }}</p>
             <h3 class="skills-hub-detail-title">{{ mobileSheetTitle }}</h3>
           </div>
-          <UiButton size="sm" variant="ghost" @click="closeMobileDetailSheet">
-            {{ t('skills_hub_detail_sheet_close') }}
-          </UiButton>
         </header>
         <section v-if="installedSkills.length > 0" class="skills-hub-section-card">
           <header class="skills-hub-section-head">
@@ -393,7 +384,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   completeGitHubDeviceLogin,
   getClawHubDownloadUrl,
@@ -446,7 +437,7 @@ const githubDeviceLogin = ref<{ device_code: string; user_code: string; verifica
 const selectedGitHubSkill = ref<GitHubHubSkill | null>(null)
 const githubReadme = ref('')
 const isCompactViewport = ref(false)
-const isMobileDetailOpen = ref(false)
+const detailPanelRef = ref<HTMLElement | null>(null)
 const githubAuthPending = ref(false)
 const installingGitHubSkillKey = ref('')
 const installingClawHubSlug = ref('')
@@ -502,7 +493,7 @@ const mobileSheetTitle = computed(() => {
   if (installedSkills.value.length > 0) {
     return t('skills_hub_installed_label')
   }
-  return t('skills_hub_results_title')
+  return t('skills_hub_detail_idle')
 })
 
 async function runSearch(nextQuery = query.value): Promise<void> {
@@ -549,7 +540,7 @@ async function refreshInstalledSkills(): Promise<void> {
 async function openSkill(slug: string): Promise<void> {
   if (sourceMode.value !== 'clawhub') return
   selectedSlug.value = slug
-  openMobileDetailSheet()
+  scrollDetailIntoView()
   detailError.value = ''
   isDetailLoading.value = true
   try {
@@ -618,7 +609,7 @@ async function installGitHubSkillCard(skill: GitHubHubSkill): Promise<void> {
     if (selectedGitHubSkill.value?.owner === skill.owner && selectedGitHubSkill.value?.name === skill.name) {
       selectedGitHubSkill.value = { ...skill, installed: true }
     }
-    openMobileDetailSheet()
+    scrollDetailIntoView()
   } catch (error) {
     githubStatusMessage.value = error instanceof Error ? error.message : t('skills_hub_github_install_failed')
   } finally {
@@ -628,7 +619,7 @@ async function installGitHubSkillCard(skill: GitHubHubSkill): Promise<void> {
 
 async function selectGitHubSkill(skill: GitHubHubSkill): Promise<void> {
   selectedGitHubSkill.value = skill
-  openMobileDetailSheet()
+  scrollDetailIntoView()
   githubReadme.value = ''
   try {
     githubReadme.value = await getGitHubHubSkillReadme(skill.owner, skill.name)
@@ -735,23 +726,21 @@ async function removeInstalledSkill(skill: InstalledSkill): Promise<void> {
 function updateCompactViewport(): void {
   if (typeof window === 'undefined') return
   isCompactViewport.value = window.innerWidth <= 960
-  if (!isCompactViewport.value) {
-    isMobileDetailOpen.value = false
-  }
 }
 
-function openMobileDetailSheet(): void {
+function scrollDetailIntoView(): void {
   if (!isCompactViewport.value) return
-  isMobileDetailOpen.value = true
-}
-
-function closeMobileDetailSheet(): void {
-  isMobileDetailOpen.value = false
+  nextTick(() => {
+    detailPanelRef.value?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  })
 }
 
 function openUrl(url: string): void {
   if (typeof window === 'undefined') return
-  window.open(url, '_blank', 'noopener,noreferrer')
+  window.location.assign(`anyclaw://external/open?url=${encodeURIComponent(url)}`)
 }
 
 function formatDate(value: number): string {
@@ -1022,7 +1011,8 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
 }
 
-.skills-hub-github-device a {
+.skills-hub-github-link {
+  @apply border-0 bg-transparent p-0 text-sm;
   color: var(--accent-primary);
 }
 
@@ -1060,11 +1050,6 @@ onBeforeUnmount(() => {
 
 .skills-hub-detail {
   @apply flex flex-col gap-4;
-}
-
-.skills-hub-mobile-backdrop {
-  @apply fixed inset-0 z-[69] border-0 bg-transparent;
-  backdrop-filter: blur(6px);
 }
 
 .skills-hub-mobile-sheet-head {
@@ -1183,21 +1168,13 @@ onBeforeUnmount(() => {
     @apply mt-4 p-3;
   }
 
-  .skills-hub-detail-sheet {
-    @apply fixed inset-x-0 bottom-0 z-[80] max-h-[82dvh] translate-y-full overflow-y-auto rounded-t-[1.5rem] border-t px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 transition-transform duration-200;
-    border-color: var(--border-subtle);
-    background: color-mix(in srgb, var(--surface-elevated) 98%, transparent);
-    box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.34);
-  }
-
-  .skills-hub-detail-sheet-open {
-    transform: translateY(0);
+  .skills-hub-detail-inline {
+    @apply scroll-mt-20;
   }
 
   .skills-hub-mobile-sheet-head {
-    @apply sticky top-0 z-[1] mb-3 flex items-start justify-between gap-3 border-b pb-3;
+    @apply mb-3 flex items-start justify-between gap-3 border-b pb-3;
     border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
-    background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
   }
 
   .skills-hub-github-card,

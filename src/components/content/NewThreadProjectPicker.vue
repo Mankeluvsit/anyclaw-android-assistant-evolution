@@ -281,9 +281,10 @@ watch(
 @reference "tailwindcss";
 
 .project-picker {
-  @apply flex max-h-[min(58dvh,32rem)] min-h-0 flex-col gap-3 overflow-hidden rounded-[1.2rem] border p-3;
+  @apply flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[1.2rem] border p-3;
   border-color: var(--border-subtle);
   background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  max-height: min(68dvh, 42rem);
 }
 
 .project-picker-search-shell {
@@ -425,5 +426,15 @@ watch(
   @apply rounded-[1rem] border border-dashed px-3 py-5 text-sm text-center;
   border-color: var(--border-subtle);
   color: var(--text-muted);
+}
+
+@media (max-width: 960px) {
+  .project-picker {
+    max-height: none;
+  }
+
+  .project-picker-list {
+    @apply overflow-visible pr-0;
+  }
 }
 </style>

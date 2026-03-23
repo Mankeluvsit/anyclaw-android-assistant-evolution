@@ -401,14 +401,28 @@ class MainActivity : AppCompatActivity() {
         if (uri.scheme.equals("anyclaw", ignoreCase = true)) {
             val host = (uri.host ?: "").lowercase()
             val path = (uri.path ?: "/").lowercase()
+            if (host == "external" && path == "/open") {
+                val targetUrl = uri.getQueryParameter("url")
+                if (!targetUrl.isNullOrBlank()) {
+                    openUrlInExternalBrowser(targetUrl)
+                    return true
+                }
+            }
+            if (host == "openclaw" && path == "/dashboard") {
+                webView.loadUrl(buildOpenClawChatUrl(null))
+                return true
+            }
             if (host == "openclaw" && path == "/restart") {
-                restartOpenClawFromWeb()
+                restartOpenClawFromWeb(uri.getQueryParameter("open") == "1")
                 return true
             }
             return false
         }
         val host = (uri.host ?: "").lowercase()
-        if (host != "127.0.0.1" && host != "localhost") return false
+        if (host != "127.0.0.1" && host != "localhost") {
+            openUrlInExternalBrowser(rawUrl)
+            return true
+        }
         val port = if (uri.port > 0) uri.port else -1
         if (port != openClawControlUiPort && port != LEGACY_OPENCLAW_CONTROL_UI_PORT) return false
         val path = uri.path ?: "/"
@@ -418,19 +432,31 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun restartOpenClawFromWeb() {
+    private fun restartOpenClawFromWeb(openAfter: Boolean = false) {
         Toast.makeText(this, "Restarting OpenClaw…", Toast.LENGTH_SHORT).show()
         Thread {
             val ok = serverManager.reconnectOpenClawGateway()
             runOnUiThread {
                 if (ok) {
                     Toast.makeText(this, "OpenClaw restarted.", Toast.LENGTH_LONG).show()
+                    if (openAfter) {
+                        webView.loadUrl(buildOpenClawChatUrl(null))
+                    }
                 } else {
                     Toast.makeText(this, "OpenClaw restart failed.", Toast.LENGTH_LONG).show()
                 }
                 refreshGatewayStatusAsync(announce = false)
             }
         }.start()
+    }
+
+    private fun openUrlInExternalBrowser(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open external link.", Toast.LENGTH_LONG).show()
+            Log.w(TAG, "Failed to open external link $url", e)
+        }
     }
 
     private fun buildCodexRootUrl(): String {

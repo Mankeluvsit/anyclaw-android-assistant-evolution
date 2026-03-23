@@ -118,6 +118,17 @@
           </template>
           <template #actions>
             <UiButton
+              v-if="!isSettingsRoute"
+              class="header-global-settings-button"
+              size="sm"
+              variant="surface"
+              :aria-label="t('settings_label')"
+              :title="t('settings_label')"
+              @click="openGlobalSettings"
+            >
+              {{ t('settings_label') }}
+            </UiButton>
+            <UiButton
               v-if="!isHomeRoute && !isSkillsRoute"
               class="header-search-button"
               size="icon"
@@ -1174,18 +1185,19 @@ async function openOpenClawDashboard(): Promise<void> {
     dashboardStatusMessage.value = t('dashboard_offline_message', {
       detail: openClawDashboardStatus.value.detail || t('dashboard_status_unknown'),
     })
+    restartOpenClawServices(true)
     return
   }
   dashboardStatusMessage.value = ''
   if (typeof window !== 'undefined') {
-    window.location.assign(openClawDashboardUrl.value)
+    window.location.assign('anyclaw://openclaw/dashboard')
   }
 }
 
-async function restartOpenClawServices(): Promise<void> {
+async function restartOpenClawServices(openAfter = false): Promise<void> {
   dashboardStatusMessage.value = t('dashboard_restart_pending')
   if (typeof window !== 'undefined') {
-    window.location.assign('anyclaw://openclaw/restart')
+    window.location.assign(`anyclaw://openclaw/restart?open=${openAfter ? '1' : '0'}`)
   }
   window.setTimeout(() => {
     void refreshOpenClawDashboardStatus()
@@ -1686,7 +1698,7 @@ async function submitFirstMessageForNewThread(
 @reference "tailwindcss";
 
 .sidebar-root {
-  @apply min-h-full py-4 px-2 flex flex-col gap-2 select-none;
+  @apply min-h-full py-4 px-2 flex flex-col gap-2 select-none overflow-y-auto;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-base) 86%, transparent), transparent 18%),
     radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 38%);
@@ -1832,7 +1844,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .content-body {
-  @apply flex-1 min-h-0 w-full flex flex-col gap-3 pt-1 pb-4 overflow-y-hidden overflow-x-visible;
+  @apply flex-1 min-h-0 w-full flex flex-col gap-3 pt-1 pb-4 overflow-y-auto overflow-x-visible;
 }
 
 .thread-search-bar {
@@ -1891,7 +1903,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .new-thread-empty {
-  @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-3 px-6;
+  @apply flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto px-6 pb-4;
 }
 
 .new-thread-hero {
@@ -1972,6 +1984,10 @@ async function submitFirstMessageForNewThread(
 
 .header-settings-button {
   @apply h-9 w-9;
+}
+
+.header-global-settings-button {
+  @apply shrink-0;
 }
 
 .header-settings-icon {
