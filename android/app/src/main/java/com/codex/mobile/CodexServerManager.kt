@@ -1144,7 +1144,7 @@ H3
                 .put("http://localhost:$openClawControlUiPort"),
         )
         controlUi.put("allowInsecureAuth", true)
-        controlUi.put("dangerouslyDisableDeviceAuth", false)
+        controlUi.put("dangerouslyDisableDeviceAuth", true)
         val auth = ensureObject(gateway, "auth")
         auth.put("mode", "token")
         val gatewayToken = auth.optString("token", "").trim().ifEmpty { generateGatewayToken() }
