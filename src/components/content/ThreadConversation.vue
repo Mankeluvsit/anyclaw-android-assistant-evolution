@@ -9,8 +9,8 @@
       {{ t('conversation_empty') }}
     </p>
 
-    <ScrollAreaRoot v-else class="conversation-scroll">
-      <ScrollAreaViewport ref="conversationListRef" class="conversation-list" @scroll="onConversationScroll">
+    <div v-else ref="conversationListRef" class="conversation-scroll" @scroll="onConversationScroll">
+      <div class="conversation-list">
         <ul class="conversation-list-inner">
       <li
         v-for="request in pendingRequests"
@@ -108,16 +108,31 @@
               </ul>
 
               <article
-                v-if="message.text.length > 0"
+                v-if="shouldRenderMessageBubble(message)"
                 class="message-card"
                 :data-role="message.role"
               >
+                <div
+                  v-if="message.role === 'assistant' && liveOverlay && reasoningTargetMessageId === message.id"
+                  class="assistant-live-shell"
+                >
+                  <p class="assistant-live-label">{{ liveOverlay.activityLabel }}</p>
+                  <details
+                    v-if="liveOverlay.reasoningText"
+                    class="assistant-live-reasoning-shell"
+                    :open="liveOverlay.reasoningText.length < 220"
+                  >
+                    <summary class="assistant-live-reasoning-summary">{{ t('conversation_thinking_label') }}</summary>
+                    <p class="assistant-live-reasoning">{{ liveOverlay.reasoningText }}</p>
+                  </details>
+                  <p v-if="liveOverlay.errorText" class="assistant-live-error">{{ liveOverlay.errorText }}</p>
+                </div>
                 <div v-if="message.messageType === 'worked'" class="worked-separator" aria-live="polite">
                   <span class="worked-separator-line" aria-hidden="true" />
                   <p class="worked-separator-text">{{ message.text }}</p>
                   <span class="worked-separator-line" aria-hidden="true" />
                 </div>
-                <ThreadMessageContent v-else :text="message.text" />
+                <ThreadMessageContent v-else-if="message.text.length > 0" :text="message.text" />
                 <div
                   v-if="message.messageType !== 'worked' && (message.role === 'assistant' || message.role === 'user')"
                   class="message-actions-inline"
@@ -168,33 +183,34 @@
           </div>
         </div>
       </li>
-      <li v-if="liveOverlay" class="conversation-item conversation-item-overlay">
+      <li
+        v-if="liveOverlay && !reasoningTargetMessageId"
+        class="conversation-item conversation-item-overlay"
+        data-role="assistant"
+      >
         <div class="message-row">
           <div class="message-stack">
-            <article class="live-overlay-inline" aria-live="polite">
-              <p class="live-overlay-label">{{ liveOverlay.activityLabel }}</p>
+            <article class="message-card assistant-live-card" data-role="assistant" aria-live="polite">
+              <p class="assistant-live-label">{{ liveOverlay.activityLabel }}</p>
               <details
                 v-if="liveOverlay.reasoningText"
-                class="live-overlay-reasoning-shell"
+                class="assistant-live-reasoning-shell"
                 :open="liveOverlay.reasoningText.length < 220"
               >
-                <summary class="live-overlay-reasoning-summary">{{ t('conversation_thinking_label') }}</summary>
-                <p class="live-overlay-reasoning">
+                <summary class="assistant-live-reasoning-summary">{{ t('conversation_thinking_label') }}</summary>
+                <p class="assistant-live-reasoning">
                   {{ liveOverlay.reasoningText }}
                 </p>
               </details>
-              <p v-if="liveOverlay.errorText" class="live-overlay-error">{{ liveOverlay.errorText }}</p>
+              <p v-if="liveOverlay.errorText" class="assistant-live-error">{{ liveOverlay.errorText }}</p>
             </article>
           </div>
         </div>
       </li>
           <li ref="bottomAnchorRef" class="conversation-bottom-anchor" />
         </ul>
-      </ScrollAreaViewport>
-      <ScrollAreaScrollbar class="conversation-scrollbar" orientation="vertical">
-        <ScrollAreaThumb class="conversation-scrollbar-thumb" />
-      </ScrollAreaScrollbar>
-    </ScrollAreaRoot>
+      </div>
+    </div>
 
     <div v-if="modalImageUrl.length > 0" class="image-modal-backdrop" @click="closeImageModal">
       <div class="image-modal-content" @click.stop>
@@ -208,8 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ScrollAreaRoot, ScrollAreaScrollbar, ScrollAreaThumb, ScrollAreaViewport } from 'radix-vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import IconTablerDots from '../icons/IconTablerDots.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
@@ -250,6 +265,15 @@ let scrollRestoreFrame = 0
 let bottomLockFrame = 0
 let bottomLockFramesLeft = 0
 const trackedPendingImages = new WeakSet<HTMLImageElement>()
+const reasoningTargetMessageId = computed(() => {
+  for (let index = props.messages.length - 1; index >= 0; index -= 1) {
+    const message = props.messages[index]
+    if (message.role === 'assistant' && message.messageType === 'agentMessage.live') {
+      return message.id
+    }
+  }
+  return ''
+})
 
 type ParsedToolQuestion = {
   id: string
@@ -597,6 +621,11 @@ function onBranchFromMessage(messageId: string): void {
   emit('branchFromMessage', messageId)
 }
 
+function shouldRenderMessageBubble(message: UiMessage): boolean {
+  if (message.text.length > 0) return true
+  return message.role === 'assistant' && !!props.liveOverlay && reasoningTargetMessageId.value === message.id
+}
+
 onBeforeUnmount(() => {
   if (scrollRestoreFrame) {
     cancelAnimationFrame(scrollRestoreFrame)
@@ -611,7 +640,7 @@ onBeforeUnmount(() => {
 @reference "tailwindcss";
 
 .conversation-root {
-  @apply h-full min-h-0 p-0 flex flex-col overflow-y-hidden overflow-x-visible bg-transparent border-none rounded-none;
+  @apply h-full min-h-0 p-0 flex flex-col overflow-hidden bg-transparent border-none rounded-none;
 }
 
 .conversation-loading {
@@ -625,24 +654,16 @@ onBeforeUnmount(() => {
 }
 
 .conversation-list {
-  @apply h-full min-h-0 overflow-y-auto overflow-x-visible;
-}
-
-.conversation-list-inner {
-  @apply m-0 flex min-h-full list-none flex-col gap-6 px-4 py-0 sm:px-6;
+  @apply min-h-full;
 }
 
 .conversation-scroll {
-  @apply h-full min-h-0;
+  @apply h-full min-h-0 overflow-y-auto overflow-x-hidden pr-1;
+  overscroll-behavior: contain;
 }
 
-.conversation-scrollbar {
-  @apply flex w-3 touch-none select-none p-0.5;
-}
-
-.conversation-scrollbar-thumb {
-  @apply relative flex-1 rounded-full;
-  background: color-mix(in srgb, var(--border-strong) 88%, transparent);
+.conversation-list-inner {
+  @apply m-0 flex min-h-full list-none flex-col gap-4 px-4 py-3 sm:px-6;
 }
 
 .conversation-item {
@@ -655,6 +676,11 @@ onBeforeUnmount(() => {
 
 .conversation-item-overlay {
   @apply justify-center;
+}
+
+.conversation-item[data-role='assistant'] + .conversation-item[data-role='assistant'],
+.conversation-item[data-role='user'] + .conversation-item[data-role='user'] {
+  @apply -mt-1;
 }
 
 .message-row {
@@ -753,38 +779,6 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
-.live-overlay-inline {
-  @apply flex w-full max-w-180 flex-col gap-2 rounded-2xl border px-4 py-3;
-  border-color: color-mix(in srgb, var(--accent-primary) 18%, var(--border-subtle));
-  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
-  box-shadow: var(--shadow-soft);
-}
-
-.live-overlay-label {
-  @apply m-0 text-sm leading-5 font-medium;
-  color: var(--text-default);
-}
-
-.live-overlay-reasoning-shell {
-  @apply rounded-2xl border px-3 py-2;
-  border-color: var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-hover) 74%, transparent);
-}
-
-.live-overlay-reasoning-summary {
-  @apply cursor-pointer text-[11px] font-semibold uppercase tracking-[0.16em];
-  color: var(--text-muted);
-}
-
-.live-overlay-reasoning {
-  @apply mb-0 mt-2 text-sm leading-6 whitespace-pre-wrap;
-  color: var(--text-muted);
-}
-
-.live-overlay-error {
-  @apply m-0 text-sm leading-5 text-rose-600 whitespace-pre-wrap;
-}
-
 .message-body {
   @apply flex flex-col max-w-full;
   width: fit-content;
@@ -876,6 +870,40 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-soft);
 }
 
+.assistant-live-card {
+  @apply gap-3;
+}
+
+.assistant-live-shell {
+  @apply flex flex-col gap-2;
+}
+
+.assistant-live-label {
+  @apply m-0 text-[11px] font-semibold uppercase tracking-[0.14em];
+  color: var(--text-muted);
+}
+
+.assistant-live-reasoning-shell {
+  @apply rounded-2xl border px-3 py-2;
+  border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 82%, transparent);
+}
+
+.assistant-live-reasoning-summary {
+  @apply cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em];
+  color: var(--text-muted);
+}
+
+.assistant-live-reasoning {
+  @apply mb-0 mt-2 text-sm leading-6 whitespace-pre-wrap;
+  color: var(--text-default);
+}
+
+.assistant-live-error {
+  @apply m-0 text-sm leading-5 whitespace-pre-wrap;
+  color: rgb(225 29 72);
+}
+
 .conversation-item[data-message-type='worked'] .message-stack,
 .conversation-item[data-message-type='worked'] .message-body,
 .conversation-item[data-message-type='worked'] .message-card {
@@ -898,7 +926,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 960px) {
   .conversation-list-inner {
-    @apply gap-4 px-3;
+    @apply gap-3 px-3 py-2;
   }
 
   .message-row {
