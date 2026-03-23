@@ -1501,8 +1501,7 @@ H3
         // Run it asynchronously with retries so slow startups still get cron/task registration.
         ensureHeartbeatBootstrapAsync(paths.homeDir)
 
-        Thread.sleep(1200)
-        if (isOpenClawGatewayResponsive()) {
+        if (waitForOpenClawGatewayReady()) {
             Log.i(TAG, "OpenClaw gateway started on port $openClawGatewayPort")
             writeOpenClawStatus(
                 paths,
@@ -1520,6 +1519,19 @@ H3
             "offline",
             "Gateway process launched but did not become responsive",
         )
+        return false
+    }
+
+    private fun waitForOpenClawGatewayReady(timeoutMs: Long = 12_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val proc = openClawGatewayProcess
+            if (proc != null && !proc.isAlive) return false
+            if (isOpenClawGatewayResponsive()) {
+                return true
+            }
+            Thread.sleep(400)
+        }
         return false
     }
 
@@ -1879,9 +1891,16 @@ H3
         configureOpenClawAuth()
         val gatewayOk = startOpenClawGateway()
         if (!gatewayOk) return false
-        startOpenClawControlUiServer()
-        Thread.sleep(800)
-        return isOpenClawGatewayResponsive()
+        val controlUiOk = startOpenClawControlUiServer()
+        if (!controlUiOk) {
+            writeOpenClawStatus(
+                paths,
+                "control-ui-status.json",
+                "offline",
+                "Gateway restarted, but control UI did not become ready",
+            )
+        }
+        return gatewayOk && controlUiOk
     }
 
     private fun ensureHeartbeatBootstrap() {

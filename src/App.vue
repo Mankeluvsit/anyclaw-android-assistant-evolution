@@ -120,13 +120,13 @@
             <UiButton
               v-if="!isSettingsRoute"
               class="header-global-settings-button"
-              size="sm"
+              size="icon"
               variant="surface"
               :aria-label="t('settings_label')"
               :title="t('settings_label')"
               @click="openGlobalSettings"
             >
-              {{ t('settings_label') }}
+              <IconTablerSettings class="header-settings-icon" />
             </UiButton>
             <UiButton
               v-if="!isHomeRoute && !isSkillsRoute"
@@ -1199,10 +1199,12 @@ async function restartOpenClawServices(openAfter = false): Promise<void> {
   if (typeof window !== 'undefined') {
     window.location.assign(`anyclaw://openclaw/restart?open=${openAfter ? '1' : '0'}`)
   }
-  window.setTimeout(() => {
-    void refreshOpenClawDashboardStatus()
-    void refreshOpenClawRuntimeDiagnostics()
-  }, 1800)
+  ;[1800, 5000, 9000, 13000].forEach((delay) => {
+    window.setTimeout(() => {
+      void refreshOpenClawDashboardStatus()
+      void refreshOpenClawRuntimeDiagnostics()
+    }, delay)
+  })
 }
 
 function saveCurrentView(): void {
@@ -1739,7 +1741,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .global-settings-view {
-  @apply flex h-full min-h-0 flex-col gap-4 overflow-y-auto px-3 pb-6 pt-4 md:px-5;
+  @apply flex min-h-0 flex-col gap-4 px-3 pb-6 pt-4 md:px-5;
 }
 
 .global-settings-hero {
@@ -2203,7 +2205,11 @@ async function submitFirstMessageForNewThread(
   }
 
   .content-body {
-    @apply gap-2 px-0 pb-[max(0.75rem,env(safe-area-inset-bottom))];
+    @apply gap-2 overflow-y-auto px-0 pb-[max(0.75rem,env(safe-area-inset-bottom))];
+  }
+
+  .global-settings-view {
+    @apply px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))];
   }
 
   .thread-search-bar {
