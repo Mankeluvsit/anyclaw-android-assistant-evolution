@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename, normalize } from 'node:path'
 
 const prefixBin = process.env.PREFIX ? join(process.env.PREFIX, 'bin') : ''
 const shellPath = prefixBin ? join(prefixBin, 'sh') : '/bin/sh'
@@ -143,6 +143,13 @@ function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function isSafeRelativePath(filePath: string): boolean {
+  const normalizedPath = normalize(filePath)
+  if (normalizedPath.startsWith('..')) return false
+  if (normalizedPath.includes('../')) return false
+  return !normalizedPath.startsWith('/')
+}
+
 function normalizePositiveInteger(value: string, fallback: number, max: number): number {
   const parsed = Number.parseInt(value, 10)
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback
@@ -174,6 +181,125 @@ async function fetchClawHubJson(path: string, params: URLSearchParams): Promise<
   }
 
   return response.json()
+}
+
+async function fetchClawHubText(path: string, params: URLSearchParams): Promise<string> {
+  const target = new URL(`${clawHubBaseUrl}${path}`)
+  target.search = params.toString()
+
+  const response = await fetch(target, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(12000),
+    headers: {
+      Accept: '*/*',
+      'User-Agent': 'AnyClaw-Debug/1.0',
+    },
+  })
+
+  if (!response.ok) {
+    const fallback = `ClawHub request failed with HTTP ${String(response.status)}`
+    let detail = ''
+    try {
+      detail = (await response.text()).trim()
+    } catch {
+      detail = ''
+    }
+    throw new Error(detail || fallback)
+  }
+
+  return response.text()
+}
+
+type SkillsListPayload = {
+  data?: Array<{
+    cwd?: string
+    skills?: Array<{
+      name?: string
+      description?: string
+      shortDescription?: string
+      path?: string
+      scope?: 'user' | 'repo' | 'system' | 'admin'
+      enabled?: boolean
+    }>
+  }>
+}
+
+async function readInstalledSkills(appServer: AppServerProcess, forceReload = false) {
+  const payload = (await appServer.rpc('skills/list', { forceReload })) as SkillsListPayload
+  const installed = new Map<string, {
+    name: string
+    description: string
+    shortDescription: string
+    path: string
+    scope: 'user' | 'repo' | 'system' | 'admin'
+    enabled: boolean
+  }>()
+
+  for (const row of payload.data ?? []) {
+    for (const skill of row.skills ?? []) {
+      const path = normalizeText(skill.path)
+      const name = normalizeText(skill.name)
+      if (!path || !name) continue
+      if (installed.has(path)) continue
+      installed.set(path, {
+        name,
+        description: normalizeText(skill.description),
+        shortDescription: normalizeText(skill.shortDescription),
+        path,
+        scope: skill.scope ?? 'user',
+        enabled: skill.enabled !== false,
+      })
+    }
+  }
+
+  return Array.from(installed.values()).sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function getCodexHomeDir(): string {
+  return homeDir ? join(homeDir, '.codex') : join(tmpdir(), '.codex')
+}
+
+function getUserSkillsDir(): string {
+  return join(getCodexHomeDir(), 'skills')
+}
+
+async function installClawHubSkillToDisk(
+  slug: string,
+  version: string,
+): Promise<{ installDir: string; skillFilePath: string }> {
+  const versionPayload = await fetchClawHubJson(
+    `/api/v1/skills/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}`,
+    new URLSearchParams(),
+  ) as { files?: Array<{ path?: string }> }
+
+  const files = Array.isArray(versionPayload.files) ? versionPayload.files : []
+  if (files.length === 0) {
+    throw new Error('No skill files found for this version')
+  }
+
+  const installDir = join(getUserSkillsDir(), slug)
+  await rm(installDir, { recursive: true, force: true })
+  await mkdir(installDir, { recursive: true })
+
+  for (const file of files) {
+    const relativePath = normalizeText(file.path)
+    if (!relativePath || !isSafeRelativePath(relativePath)) {
+      throw new Error(`Unsafe skill file path: ${relativePath || '<empty>'}`)
+    }
+    const body = await fetchClawHubText(
+      `/api/v1/skills/${encodeURIComponent(slug)}/file`,
+      new URLSearchParams({
+        path: relativePath,
+        version,
+      }),
+    )
+    const destination = join(installDir, relativePath)
+    await mkdir(dirname(destination), { recursive: true })
+    await writeFile(destination, body, 'utf8')
+  }
+
+  const skillFilePath = join(installDir, 'SKILL.md')
+  return { installDir, skillFilePath }
 }
 
 function buildCapabilitySummary(statusRecord: Record<string, unknown> | null): string {
@@ -795,6 +921,104 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           params.set('tag', tag)
         }
         setJson(res, 200, { url: `${clawHubBaseUrl}/api/v1/download?${params.toString()}` })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/version-detail') {
+        const slug = normalizeText(url.searchParams.get('slug'))
+        const version = normalizeText(url.searchParams.get('version'))
+        if (!slug || !version) {
+          setJson(res, 400, { error: 'Missing slug or version' })
+          return
+        }
+
+        const payload = await fetchClawHubJson(
+          `/api/v1/skills/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}`,
+          new URLSearchParams(),
+        )
+        setJson(res, 200, payload)
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/skills-hub/installed') {
+        const installed = await readInstalledSkills(appServer)
+        setJson(res, 200, { data: installed })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-hub/install') {
+        const body = asRecord(await readJsonBody(req))
+        const slug = normalizeText(body?.slug)
+        const requestedVersion = normalizeText(body?.version)
+        if (!slug) {
+          setJson(res, 400, { error: 'Missing slug' })
+          return
+        }
+
+        const detail = await fetchClawHubJson(
+          `/api/v1/skills/${encodeURIComponent(slug)}`,
+          new URLSearchParams(),
+        ) as { latestVersion?: { version?: string } | null }
+        const version = requestedVersion || normalizeText(detail.latestVersion?.version)
+        if (!version) {
+          setJson(res, 400, { error: 'No installable version found' })
+          return
+        }
+
+        const installedBefore = await readInstalledSkills(appServer)
+        const beforeSet = new Set(installedBefore.map((entry) => entry.path))
+        const { skillFilePath } = await installClawHubSkillToDisk(slug, version)
+        const installedAfter = await readInstalledSkills(appServer, true)
+        const installedEntry =
+          installedAfter.find((entry) => entry.path === skillFilePath)
+          ?? installedAfter.find((entry) => !beforeSet.has(entry.path) && entry.name === slug)
+          ?? installedAfter.find((entry) => entry.name === slug)
+
+        if (!installedEntry) {
+          throw new Error('Skill files were downloaded, but Codex did not register the skill')
+        }
+
+        setJson(res, 200, {
+          ok: true,
+          name: installedEntry.name,
+          path: installedEntry.path,
+        })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-hub/uninstall') {
+        const body = asRecord(await readJsonBody(req))
+        const skillPath = normalizeText(body?.path)
+        if (!skillPath) {
+          setJson(res, 400, { error: 'Missing path' })
+          return
+        }
+        const skillRoot = dirname(skillPath)
+        const userSkillsDir = getUserSkillsDir()
+        if (!skillRoot.startsWith(`${userSkillsDir}/`) && skillRoot !== userSkillsDir) {
+          setJson(res, 400, { error: 'Refusing to remove a non-user skill' })
+          return
+        }
+
+        await rm(skillRoot, { recursive: true, force: true })
+        await readInstalledSkills(appServer, true)
+        setJson(res, 200, { ok: true })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/skills-hub/toggle') {
+        const body = asRecord(await readJsonBody(req))
+        const skillPath = normalizeText(body?.path)
+        const enabled = body?.enabled === true
+        if (!skillPath) {
+          setJson(res, 400, { error: 'Missing path' })
+          return
+        }
+        await appServer.rpc('skills/config/write', {
+          path: skillPath,
+          enabled,
+        })
+        setJson(res, 200, { ok: true })
         return
       }
 

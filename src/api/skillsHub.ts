@@ -1,7 +1,9 @@
 import type {
   ClawHubSkillDetail,
   ClawHubSkillSearchResult,
+  ClawHubSkillVersionDetail,
   ClawHubSkillVersion,
+  InstalledSkill,
 } from '../types/skillsHub'
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -42,6 +44,15 @@ export async function getClawHubSkillVersions(slug: string, limit = 6): Promise<
   return Array.isArray(payload.items) ? payload.items : []
 }
 
+export async function getClawHubSkillVersionDetail(slug: string, version: string): Promise<ClawHubSkillVersionDetail> {
+  const params = new URLSearchParams({
+    slug: slug.trim(),
+    version: version.trim(),
+  })
+  const response = await fetch(`/codex-api/skills-hub/version-detail?${params.toString()}`)
+  return readJson<ClawHubSkillVersionDetail>(response)
+}
+
 export async function getClawHubDownloadUrl(
   slug: string,
   options: { version?: string; tag?: string } = {},
@@ -58,4 +69,43 @@ export async function getClawHubDownloadUrl(
     throw new Error('Download URL unavailable')
   }
   return payload.url
+}
+
+export async function getInstalledSkills(): Promise<InstalledSkill[]> {
+  const response = await fetch('/codex-api/skills-hub/installed')
+  const payload = await readJson<{ data?: InstalledSkill[] }>(response)
+  return Array.isArray(payload.data) ? payload.data : []
+}
+
+export async function installClawHubSkill(
+  slug: string,
+  options: { version?: string } = {},
+): Promise<{ name: string; path: string }> {
+  const response = await fetch('/codex-api/skills-hub/install', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slug,
+      version: options.version,
+    }),
+  })
+  return readJson<{ name: string; path: string }>(response)
+}
+
+export async function uninstallSkill(path: string): Promise<void> {
+  const response = await fetch('/codex-api/skills-hub/uninstall', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  await readJson<{ ok: boolean }>(response)
+}
+
+export async function setInstalledSkillEnabled(path: string, enabled: boolean): Promise<void> {
+  const response = await fetch('/codex-api/skills-hub/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, enabled }),
+  })
+  await readJson<{ ok: boolean }>(response)
 }

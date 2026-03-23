@@ -98,6 +98,29 @@
       </section>
 
       <aside class="skills-hub-detail">
+        <section v-if="installedSkills.length > 0" class="skills-hub-section-card">
+          <header class="skills-hub-section-head">
+            <h4>{{ t('skills_hub_installed_label') }}</h4>
+            <span class="skills-hub-chip">{{ installedSkills.length }}</span>
+          </header>
+          <ul class="skills-hub-installed-list">
+            <li v-for="skill in installedSkills" :key="skill.path" class="skills-hub-installed-item">
+              <div>
+                <strong>{{ skill.name }}</strong>
+                <p>{{ skill.shortDescription || skill.description || skill.path }}</p>
+              </div>
+              <div class="skills-hub-installed-actions">
+                <UiButton size="sm" variant="ghost" @click="toggleInstalledSkill(skill)">
+                  {{ skill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action') }}
+                </UiButton>
+                <UiButton size="sm" variant="ghost" @click="removeInstalledSkill(skill)">
+                  {{ t('skills_hub_uninstall_action') }}
+                </UiButton>
+              </div>
+            </li>
+          </ul>
+        </section>
+
         <div v-if="isDetailLoading" class="skills-hub-state">
           {{ t('skills_hub_detail_loading') }}
         </div>
@@ -113,9 +136,17 @@
               <p class="skills-hub-detail-slug">{{ selectedDetail.skill.slug }}</p>
               <h3 class="skills-hub-detail-title">{{ selectedDetail.skill.displayName }}</h3>
             </div>
-            <UiButton variant="surface" @click="downloadLatest()">
-              {{ t('skills_hub_download_latest') }}
-            </UiButton>
+            <div class="skills-hub-detail-actions">
+              <UiButton variant="surface" @click="downloadLatest()">
+                {{ t('skills_hub_download_latest') }}
+              </UiButton>
+              <UiButton v-if="selectedInstalledSkill" variant="ghost" @click="toggleInstalledSkill(selectedInstalledSkill)">
+                {{ selectedInstalledSkill.enabled ? t('skills_hub_disable_action') : t('skills_hub_enable_action') }}
+              </UiButton>
+              <UiButton v-else variant="solid" @click="installLatest()">
+                {{ t('skills_hub_install_action') }}
+              </UiButton>
+            </div>
           </header>
 
           <p class="skills-hub-detail-summary">
@@ -189,12 +220,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { getClawHubDownloadUrl, getClawHubSkillDetail, getClawHubSkillVersions, searchClawHubSkills } from '../../api/skillsHub'
+import { computed, onMounted, ref } from 'vue'
+import { getClawHubDownloadUrl, getClawHubSkillDetail, getClawHubSkillVersions, getInstalledSkills, installClawHubSkill, searchClawHubSkills, setInstalledSkillEnabled, uninstallSkill } from '../../api/skillsHub'
 import IconTablerSearch from '../icons/IconTablerSearch.vue'
 import UiButton from '../ui/UiButton.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
-import type { ClawHubSkillDetail, ClawHubSkillSearchResult, ClawHubSkillVersion } from '../../types/skillsHub'
+import type { ClawHubSkillDetail, ClawHubSkillSearchResult, ClawHubSkillVersion, InstalledSkill } from '../../types/skillsHub'
 
 const { t } = useUiI18n()
 
@@ -207,6 +238,7 @@ const selectedDetail = ref<ClawHubSkillDetail | null>(null)
 const versions = ref<ClawHubSkillVersion[]>([])
 const isDetailLoading = ref(false)
 const detailError = ref('')
+const installedSkills = ref<InstalledSkill[]>([])
 
 const suggestions = ['filesystem', 'docker', 'github', 'browser', 'postgres', 'slack']
 
@@ -215,6 +247,10 @@ const ownerLabel = computed(() => {
   if (!owner) return t('diagnostics_none')
   return owner.displayName || owner.handle || owner.userId
 })
+
+const selectedInstalledSkill = computed(() =>
+  installedSkills.value.find((skill) => skill.name === selectedSlug.value) ?? null,
+)
 
 const tagSummary = computed(() => {
   const tags = selectedDetail.value?.skill.tags
@@ -244,6 +280,10 @@ async function runSearch(nextQuery = query.value): Promise<void> {
   } finally {
     isLoading.value = false
   }
+}
+
+async function refreshInstalledSkills(): Promise<void> {
+  installedSkills.value = await getInstalledSkills()
 }
 
 async function openSkill(slug: string): Promise<void> {
@@ -276,10 +316,28 @@ async function downloadLatest(): Promise<void> {
   openUrl(url)
 }
 
+async function installLatest(): Promise<void> {
+  if (!selectedDetail.value) return
+  await installClawHubSkill(selectedDetail.value.skill.slug, {
+    version: selectedDetail.value.latestVersion?.version,
+  })
+  await refreshInstalledSkills()
+}
+
 async function downloadVersion(version: string): Promise<void> {
   if (!selectedDetail.value) return
   const url = await getClawHubDownloadUrl(selectedDetail.value.skill.slug, { version })
   openUrl(url)
+}
+
+async function toggleInstalledSkill(skill: InstalledSkill): Promise<void> {
+  await setInstalledSkillEnabled(skill.path, !skill.enabled)
+  await refreshInstalledSkills()
+}
+
+async function removeInstalledSkill(skill: InstalledSkill): Promise<void> {
+  await uninstallSkill(skill.path)
+  await refreshInstalledSkills()
 }
 
 function openUrl(url: string): void {
@@ -305,6 +363,11 @@ function formatScore(value: number): string {
   if (!Number.isFinite(value)) return '0.0'
   return value.toFixed(1)
 }
+
+onMounted(() => {
+  void refreshInstalledSkills()
+  void runSearch('filesystem')
+})
 </script>
 
 <style scoped>
@@ -426,6 +489,11 @@ function formatScore(value: number): string {
 .skills-hub-detail-head,
 .skills-hub-section-head {
   @apply flex items-start justify-between gap-3;
+}
+
+.skills-hub-detail-actions,
+.skills-hub-installed-actions {
+  @apply flex flex-wrap items-center justify-end gap-2;
 }
 
 .skills-hub-results-title,
@@ -559,6 +627,26 @@ function formatScore(value: number): string {
 
 .skills-hub-version-list {
   @apply mt-3 flex list-none flex-col gap-2 p-0;
+}
+
+.skills-hub-installed-list {
+  @apply mt-3 flex list-none flex-col gap-2 p-0;
+}
+
+.skills-hub-installed-item {
+  @apply flex flex-col gap-3 rounded-[1rem] border px-3 py-3 md:flex-row md:items-center md:justify-between;
+  border-color: color-mix(in srgb, var(--border-subtle) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-base) 88%, transparent);
+}
+
+.skills-hub-installed-item strong {
+  @apply text-sm font-semibold;
+  color: var(--text-default);
+}
+
+.skills-hub-installed-item p {
+  @apply m-1 text-xs leading-5;
+  color: var(--text-muted);
 }
 
 .skills-hub-version-item {

@@ -31,6 +31,21 @@ export type ClawHubSkillVersion = {
   license?: string | null
 }
 
+export type ClawHubSkillVersionFile = {
+  path: string
+  size: number
+  sha256: string
+  contentType?: string
+}
+
+export type ClawHubSkillVersionDetail = {
+  version: string
+  createdAt: number
+  changelog: string
+  changelogSource?: string
+  files: ClawHubSkillVersionFile[]
+}
+
 export type ClawHubSkillDetail = {
   skill: {
     slug: string
@@ -45,4 +60,13 @@ export type ClawHubSkillDetail = {
   metadata: Record<string, unknown> | null
   owner: ClawHubSkillOwner | null
   moderation: Record<string, unknown> | null
+}
+
+export type InstalledSkill = {
+  name: string
+  description: string
+  shortDescription: string
+  path: string
+  scope: 'user' | 'repo' | 'system' | 'admin'
+  enabled: boolean
 }
