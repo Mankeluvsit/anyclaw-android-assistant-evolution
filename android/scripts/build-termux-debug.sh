@@ -50,7 +50,9 @@ if [ ! -d "$SDK_DIR/cmdline-tools/latest" ]; then
 fi
 
 log "Ensuring Android SDK packages"
-yes | sdkmanager --licenses >/dev/null
+set +o pipefail
+yes | sdkmanager --licenses >/dev/null || true
+set -o pipefail
 sdkmanager "platform-tools" "platforms;$PLATFORM_VERSION" "build-tools;$BUILD_TOOLS_VERSION"
 
 [ -x "$AAPT2_OVERRIDE" ] || die "AAPT2 not found at $AAPT2_OVERRIDE"
@@ -91,4 +93,3 @@ if [ -d "$(dirname "$DOWNLOAD_TARGET")" ]; then
 fi
 
 printf '\nAPK: %s\n' "$APK_PATH"
-
