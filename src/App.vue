@@ -62,17 +62,6 @@
           <span class="sidebar-skills-link-meta">{{ t('skills_hub_nav_meta') }}</span>
         </button>
 
-        <button
-          v-if="!isSidebarCollapsed"
-          class="sidebar-skills-link"
-          :class="{ 'sidebar-skills-link-active': isSettingsRoute }"
-          type="button"
-          @click="openGlobalSettings"
-        >
-          <span class="sidebar-skills-link-title">{{ t('settings_label') }}</span>
-          <span class="sidebar-skills-link-meta">{{ t('settings_nav_meta') }}</span>
-        </button>
-
         <SidebarThreadTree :groups="projectGroups" :project-display-name-by-id="projectDisplayNameById"
           v-if="!isSidebarCollapsed"
           :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
@@ -742,6 +731,7 @@ const isSidebarSearchVisible = ref(false)
 const threadSearchQuery = ref('')
 const isThreadSearchVisible = ref(false)
 const isSettingsPanelOpen = ref(false)
+const hasAttemptedOpenClawAutoRecover = ref(false)
 const sidebarSearchInputRef = ref<HTMLInputElement | null>(null)
 const threadImportInputRef = ref<HTMLInputElement | null>(null)
 const rpcMethodCatalog = ref<string[]>([])
@@ -898,8 +888,7 @@ onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
   void initialize()
   void refreshDiagnostics()
-  void refreshOpenClawDashboardStatus()
-  void refreshOpenClawRuntimeDiagnostics()
+  void ensureOpenClawAvailable()
   void loadWorkspaceDefaultRoot()
 })
 
@@ -1177,6 +1166,14 @@ async function refreshOpenClawRuntimeDiagnostics(): Promise<void> {
   } catch {
     // Keep the previous diagnostics visible if this refresh fails.
   }
+}
+
+async function ensureOpenClawAvailable(): Promise<void> {
+  await refreshOpenClawDashboardStatus()
+  await refreshOpenClawRuntimeDiagnostics()
+  if (openClawDashboardStatus.value.ok || hasAttemptedOpenClawAutoRecover.value) return
+  hasAttemptedOpenClawAutoRecover.value = true
+  await restartOpenClawServices(false)
 }
 
 async function openOpenClawDashboard(): Promise<void> {
