@@ -9,12 +9,20 @@ import org.json.JSONObject
 
 class ShizukuShellBridgeServer(
     private val context: Context,
-    port: Int = BRIDGE_PORT,
+    port: Int = bridgePortForPackage(context.packageName),
 ) : NanoHTTPD("127.0.0.1", port) {
 
     companion object {
         private const val TAG = "ShizukuBridgeServer"
-        const val BRIDGE_PORT = 18926
+        private const val BASE_BRIDGE_PORT = 18926
+
+        @JvmStatic
+        fun bridgePortForPackage(packageName: String): Int =
+            if (CodexServerManager.useIsolatedPortsForPackage(packageName)) {
+                BASE_BRIDGE_PORT + 10000
+            } else {
+                BASE_BRIDGE_PORT
+            }
     }
 
     @Volatile
@@ -154,6 +162,7 @@ class ShizukuShellBridgeServer(
         val running = ShizukuController.isServiceRunning()
         val granted = ShizukuController.hasPermission()
         val enabled = ShizukuController.isBridgeEnabled(context)
+        val bridgePort = bridgePortForPackage(context.packageName)
         return JSONObject()
             .put("ok", true)
             .put("installed", installed)
@@ -161,7 +170,7 @@ class ShizukuShellBridgeServer(
             .put("granted", granted)
             .put("enabled", enabled)
             .put("executor", "system-shell")
-            .put("bridge_port", BRIDGE_PORT)
+            .put("bridge_port", bridgePort)
             .put("last_error_code", lastErrorCode ?: JSONObject.NULL)
             .put("last_error", lastErrorMessage ?: JSONObject.NULL)
             .put("checked_at", Instant.now().toString())

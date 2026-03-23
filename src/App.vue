@@ -59,16 +59,20 @@
           @archive="onArchiveThread" @start-new-thread="onStartNewThread" @rename-project="onRenameProject"
           @remove-project="onRemoveProject" @reorder-project="onReorderProject" />
 
-        <a
+        <button
           v-if="!isSidebarCollapsed"
           class="openclaw-dashboard-link"
-          :href="openClawDashboardUrl"
-          target="_blank"
-          rel="noopener noreferrer"
+          type="button"
+          @click="openOpenClawDashboard"
         >
           <IconTablerExternalLink class="openclaw-dashboard-icon" />
-          <span class="openclaw-dashboard-label">{{ t('openclaw_dashboard_label') }}</span>
-        </a>
+          <span class="openclaw-dashboard-copy">
+            <span class="openclaw-dashboard-label">{{ t('openclaw_dashboard_label') }}</span>
+            <span class="openclaw-dashboard-meta">
+              {{ openClawDashboardStatus.ok ? t('dashboard_status_online') : t('dashboard_status_offline') }}
+            </span>
+          </span>
+        </button>
       </section>
     </template>
 
@@ -198,7 +202,7 @@
     @update:open="isSettingsPanelOpen = $event"
     @close="isSettingsPanelOpen = false"
   >
-    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['appearance', 'behavior', 'language', 'diagnostics']">
+    <AccordionRoot class="settings-accordion" type="multiple" :default-value="['appearance', 'behavior', 'project', 'workflow', 'debug', 'diagnostics']">
       <AccordionItem class="settings-section" value="appearance">
         <AccordionHeader>
           <AccordionTrigger class="settings-section-trigger">
@@ -246,14 +250,18 @@
         </AccordionHeader>
         <AccordionContent class="settings-section-content">
           <p class="diagnostics-label">{{ activeProjectName || t('diagnostics_none') }}</p>
+          <label class="ui-locale-label">{{ t('project_default_model_label') }}</label>
           <UiSelect
-            :model-value="projectPreference.defaultModel"
+            :model-value="projectPreference.defaultModel || PROJECT_NONE_OPTION"
             :options="projectModelOptions"
+            :placeholder="t('project_default_model_none')"
             @update:model-value="onProjectDefaultModelChange"
           />
+          <label class="ui-locale-label">{{ t('project_default_reasoning_label') }}</label>
           <UiSelect
-            :model-value="projectPreference.defaultReasoning"
+            :model-value="projectPreference.defaultReasoning || PROJECT_NONE_OPTION"
             :options="projectReasoningOptions"
+            :placeholder="t('project_default_reasoning_none')"
             @update:model-value="onProjectDefaultReasoningChange"
           />
           <label class="ui-locale-label">{{ t('project_instructions_label') }}</label>
@@ -266,6 +274,33 @@
           <UiButton variant="surface" size="sm" @click="applyActiveProjectDefaults">
             {{ t('project_apply_defaults') }}
           </UiButton>
+        </AccordionContent>
+      </AccordionItem>
+
+      <AccordionItem class="settings-section" value="debug">
+        <AccordionHeader>
+          <AccordionTrigger class="settings-section-trigger">
+            <span class="settings-section-label">{{ t('settings_section_debug') }}</span>
+            <IconTablerChevronDown class="settings-section-chevron" />
+          </AccordionTrigger>
+        </AccordionHeader>
+        <AccordionContent class="settings-section-content">
+          <article class="debug-status-card" :data-state="openClawDashboardStatus.ok ? 'online' : 'offline'">
+            <p class="diagnostics-label">{{ t('openclaw_dashboard_label') }}</p>
+            <p class="diagnostics-value">
+              {{ openClawDashboardStatus.ok ? t('dashboard_status_online') : t('dashboard_status_offline') }}
+            </p>
+            <p class="debug-status-detail">{{ openClawDashboardStatus.detail || t('dashboard_status_unknown') }}</p>
+          </article>
+          <div class="workflow-actions">
+            <UiButton variant="surface" size="sm" @click="refreshOpenClawDashboardStatus">
+              {{ t('dashboard_refresh_status') }}
+            </UiButton>
+            <UiButton variant="surface" size="sm" @click="openOpenClawDashboard">
+              {{ t('dashboard_open') }}
+            </UiButton>
+          </div>
+          <p v-if="dashboardStatusMessage" class="workflow-status-message">{{ dashboardStatusMessage }}</p>
         </AccordionContent>
       </AccordionItem>
 
@@ -408,6 +443,26 @@
             {{ t('diagnostics_refresh') }}
           </UiButton>
           <p v-if="diagnosticsError" class="diagnostics-error">{{ diagnosticsError }}</p>
+          <div class="diagnostics-summary-grid">
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('openclaw_gateway_status_label') }}</p>
+              <p class="diagnostics-value">{{ String(openClawRuntimeDiagnostics.gatewayStatus?.state ?? t('diagnostics_none')) }}</p>
+              <p class="diagnostics-inline-detail">{{ String(openClawRuntimeDiagnostics.gatewayStatus?.detail ?? '') }}</p>
+            </article>
+            <article class="diagnostics-card">
+              <p class="diagnostics-label">{{ t('openclaw_control_ui_status_label') }}</p>
+              <p class="diagnostics-value">{{ String(openClawRuntimeDiagnostics.controlUiStatus?.state ?? t('diagnostics_none')) }}</p>
+              <p class="diagnostics-inline-detail">{{ String(openClawRuntimeDiagnostics.controlUiStatus?.detail ?? '') }}</p>
+            </article>
+          </div>
+          <div v-if="openClawRuntimeDiagnostics.gatewayLog" class="diagnostics-log-block">
+            <p class="diagnostics-log-title">{{ t('openclaw_gateway_log_label') }}</p>
+            <pre class="diagnostics-log-pre">{{ openClawRuntimeDiagnostics.gatewayLog }}</pre>
+          </div>
+          <div v-if="openClawRuntimeDiagnostics.controlUiLog" class="diagnostics-log-block">
+            <p class="diagnostics-log-title">{{ t('openclaw_control_ui_log_label') }}</p>
+            <pre class="diagnostics-log-pre">{{ openClawRuntimeDiagnostics.controlUiLog }}</pre>
+          </div>
           <div v-if="diagnosticErrors.length > 0" class="diagnostics-log-block">
             <p class="diagnostics-log-title">{{ t('diagnostics_errors') }}</p>
             <article
@@ -477,6 +532,7 @@ import { useUiTheme, type ThemePreference } from './composables/useUiTheme'
 import type { ComposerImageAttachment, ReasoningEffort, ThreadScrollState, UiMessage } from './types/codex'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
+const PROJECT_NONE_OPTION = '__none__'
 const { localePreference, setLocalePreference, t } = useUiI18n()
 const { themePreference, setThemePreference } = useUiTheme()
 const { getProjectPreference, setProjectPreference } = useProjectPreferences()
@@ -484,8 +540,9 @@ const { savedViews, addSavedView, removeSavedView } = useSavedViews()
 const { settings, setPressEnterToSend } = useUiSettings()
 const OPENCLAW_GATEWAY_PORT_STORAGE_KEY = 'anyclaw.openclaw.gateway.port.v1'
 const OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY = 'anyclaw.openclaw.controlui.port.v1'
-const DEFAULT_OPENCLAW_GATEWAY_PORT = '18789'
-const DEFAULT_OPENCLAW_CONTROL_UI_PORT = '19001'
+const DEFAULT_CODEX_SERVER_PORT = 18923
+const OPENCLAW_GATEWAY_PORT_DELTA = 134
+const OPENCLAW_CONTROL_UI_PORT_DELTA = 78
 const isCompactViewport = useMediaQuery('(max-width: 960px)')
 const localeOptions = computed(() => [
   { value: 'system', label: t('app_language_system') },
@@ -514,16 +571,36 @@ function resolveRuntimePort(
   return fallbackPort
 }
 
+function deriveDefaultOpenClawPorts(): { gatewayPort: string; controlUiPort: string } {
+  if (typeof window === 'undefined') {
+    return { gatewayPort: '18789', controlUiPort: '19001' }
+  }
+
+  const serverPort = Number.parseInt(window.location.port || '', 10)
+  if (!Number.isFinite(serverPort)) {
+    return { gatewayPort: '18789', controlUiPort: '19001' }
+  }
+
+  const isolatedOffset = serverPort - DEFAULT_CODEX_SERVER_PORT
+  const gatewayPort = DEFAULT_CODEX_SERVER_PORT - OPENCLAW_GATEWAY_PORT_DELTA + isolatedOffset
+  const controlUiPort = DEFAULT_CODEX_SERVER_PORT + OPENCLAW_CONTROL_UI_PORT_DELTA + isolatedOffset
+  return {
+    gatewayPort: String(gatewayPort),
+    controlUiPort: String(controlUiPort),
+  }
+}
+
 const openClawDashboardUrl = computed(() => {
+  const defaults = deriveDefaultOpenClawPorts()
   const gatewayPort = resolveRuntimePort(
     'openclawGatewayPort',
     OPENCLAW_GATEWAY_PORT_STORAGE_KEY,
-    DEFAULT_OPENCLAW_GATEWAY_PORT,
+    defaults.gatewayPort,
   )
   const controlUiPort = resolveRuntimePort(
     'openclawControlUiPort',
     OPENCLAW_CONTROL_UI_PORT_STORAGE_KEY,
-    DEFAULT_OPENCLAW_CONTROL_UI_PORT,
+    defaults.controlUiPort,
   )
   const params = new URLSearchParams({
     gatewayUrl: `ws://localhost:${gatewayPort}`,
@@ -599,6 +676,27 @@ const composerDraftSeed = ref<{ key: string; text: string } | null>(null)
 const projectInstructionsDraft = ref('')
 const savedViewNameDraft = ref('')
 const workflowStatusMessage = ref('')
+const dashboardStatusMessage = ref('')
+const openClawDashboardStatus = ref<{ ok: boolean; status: number; detail: string }>({
+  ok: false,
+  status: 0,
+  detail: '',
+})
+const openClawRuntimeDiagnostics = ref<{
+  gatewayStatus: Record<string, unknown> | null
+  controlUiStatus: Record<string, unknown> | null
+  runtimeHealth: Record<string, unknown> | null
+  heartbeatBootstrap: Record<string, unknown> | null
+  gatewayLog: string
+  controlUiLog: string
+}>({
+  gatewayStatus: null,
+  controlUiStatus: null,
+  runtimeHealth: null,
+  heartbeatBootstrap: null,
+  gatewayLog: '',
+  controlUiLog: '',
+})
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -656,11 +754,11 @@ const activeProjectName = computed(() => {
 })
 const projectPreference = computed(() => getProjectPreference(activeProjectName.value))
 const projectModelOptions = computed(() => [
-  { value: '', label: t('project_default_model_none') },
+  { value: PROJECT_NONE_OPTION, label: t('project_default_model_none') },
   ...availableModelIds.value.map((modelId) => ({ value: modelId, label: modelId })),
 ])
 const projectReasoningOptions = computed(() => [
-  { value: '', label: t('project_default_reasoning_none') },
+  { value: PROJECT_NONE_OPTION, label: t('project_default_reasoning_none') },
   { value: 'none', label: t('thinking_none') },
   { value: 'minimal', label: t('thinking_minimal') },
   { value: 'low', label: t('thinking_low') },
@@ -697,6 +795,8 @@ onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
   void initialize()
   void refreshDiagnostics()
+  void refreshOpenClawDashboardStatus()
+  void refreshOpenClawRuntimeDiagnostics()
 })
 
 onUnmounted(() => {
@@ -887,12 +987,15 @@ function openThreadImportPicker(): void {
 
 function onProjectDefaultModelChange(value: string): void {
   if (!activeProjectName.value) return
-  setProjectPreference(activeProjectName.value, { defaultModel: value })
+  setProjectPreference(activeProjectName.value, { defaultModel: value === PROJECT_NONE_OPTION ? '' : value })
 }
 
 function onProjectDefaultReasoningChange(value: string): void {
   if (!activeProjectName.value) return
-  setProjectPreference(activeProjectName.value, { defaultReasoning: value as ReasoningEffort | '' })
+  setProjectPreference(
+    activeProjectName.value,
+    { defaultReasoning: value === PROJECT_NONE_OPTION ? '' : (value as ReasoningEffort | '') },
+  )
 }
 
 function onProjectInstructionsChange(): void {
@@ -913,6 +1016,57 @@ function applyProjectDefaults(projectName: string): void {
 
 function applyActiveProjectDefaults(): void {
   applyProjectDefaults(activeProjectName.value)
+}
+
+async function refreshOpenClawDashboardStatus(): Promise<void> {
+  dashboardStatusMessage.value = ''
+  try {
+    const controlUiPort = new URL(openClawDashboardUrl.value).port || '0'
+    const response = await fetch(`/codex-api/openclaw/dashboard-status?port=${encodeURIComponent(controlUiPort)}`)
+    const payload = await response.json() as { ok?: boolean; status?: number; detail?: string }
+    openClawDashboardStatus.value = {
+      ok: payload.ok === true,
+      status: typeof payload.status === 'number' ? payload.status : 0,
+      detail: typeof payload.detail === 'string' ? payload.detail : '',
+    }
+  } catch (error) {
+    openClawDashboardStatus.value = {
+      ok: false,
+      status: 0,
+      detail: error instanceof Error ? error.message : t('dashboard_status_unknown'),
+    }
+  }
+}
+
+async function refreshOpenClawRuntimeDiagnostics(): Promise<void> {
+  try {
+    const response = await fetch('/codex-api/openclaw/runtime-diagnostics')
+    const payload = await response.json() as typeof openClawRuntimeDiagnostics.value
+    openClawRuntimeDiagnostics.value = {
+      gatewayStatus: payload.gatewayStatus ?? null,
+      controlUiStatus: payload.controlUiStatus ?? null,
+      runtimeHealth: payload.runtimeHealth ?? null,
+      heartbeatBootstrap: payload.heartbeatBootstrap ?? null,
+      gatewayLog: typeof payload.gatewayLog === 'string' ? payload.gatewayLog : '',
+      controlUiLog: typeof payload.controlUiLog === 'string' ? payload.controlUiLog : '',
+    }
+  } catch {
+    // Keep the previous diagnostics visible if this refresh fails.
+  }
+}
+
+async function openOpenClawDashboard(): Promise<void> {
+  await refreshOpenClawDashboardStatus()
+  if (!openClawDashboardStatus.value.ok) {
+    dashboardStatusMessage.value = t('dashboard_offline_message', {
+      detail: openClawDashboardStatus.value.detail || t('dashboard_status_unknown'),
+    })
+    return
+  }
+  dashboardStatusMessage.value = ''
+  if (typeof window !== 'undefined') {
+    window.location.assign(openClawDashboardUrl.value)
+  }
 }
 
 function saveCurrentView(): void {
@@ -1233,6 +1387,7 @@ async function refreshDiagnostics(): Promise<void> {
     ])
     rpcMethodCatalog.value = methods
     rpcNotificationCatalog.value = notifications
+    await refreshOpenClawRuntimeDiagnostics()
   } catch (error) {
     diagnosticsError.value = error instanceof Error ? error.message : t('diagnostics_load_failed')
   } finally {
@@ -1327,6 +1482,15 @@ watch(
     projectInstructionsDraft.value = projectName ? getProjectPreference(projectName).instructions : ''
   },
   { immediate: true },
+)
+
+watch(
+  () => isSettingsPanelOpen.value,
+  (open) => {
+    if (!open) return
+    void refreshOpenClawDashboardStatus()
+    void refreshOpenClawRuntimeDiagnostics()
+  },
 )
 
 async function submitFirstMessageForNewThread(
@@ -1517,7 +1681,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .openclaw-dashboard-link {
-  @apply mt-auto mx-2 mb-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium border transition-colors duration-200 no-underline;
+  @apply mt-auto mx-2 mb-1 flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium border text-left transition-colors duration-200 no-underline;
   color: var(--accent-primary);
   background: color-mix(in srgb, var(--accent-primary) 8%, var(--surface-elevated));
   border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--border-strong));
@@ -1535,6 +1699,15 @@ async function submitFirstMessageForNewThread(
 
 .openclaw-dashboard-label {
   @apply truncate;
+}
+
+.openclaw-dashboard-copy {
+  @apply flex min-w-0 flex-1 flex-col;
+}
+
+.openclaw-dashboard-meta {
+  @apply text-[11px] uppercase tracking-[0.14em];
+  color: var(--text-muted);
 }
 
 .ui-locale-label {
@@ -1603,6 +1776,21 @@ async function submitFirstMessageForNewThread(
   @apply flex flex-col gap-3 pb-3;
 }
 
+.debug-status-card {
+  @apply rounded-2xl border px-3 py-3;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+}
+
+.debug-status-card[data-state='online'] {
+  border-color: color-mix(in srgb, var(--accent-success) 26%, var(--border-subtle));
+}
+
+.debug-status-detail {
+  @apply mt-2 mb-0 text-sm leading-6 break-words;
+  color: var(--text-muted);
+}
+
 .diagnostics-summary-grid {
   @apply grid gap-2 sm:grid-cols-2;
 }
@@ -1629,6 +1817,11 @@ async function submitFirstMessageForNewThread(
 
 .diagnostics-value-wrap {
   @apply break-words;
+}
+
+.diagnostics-inline-detail {
+  @apply mt-2 mb-0 text-xs leading-5 break-words;
+  color: var(--text-muted);
 }
 
 .diagnostics-refresh-button {
@@ -1677,6 +1870,13 @@ async function submitFirstMessageForNewThread(
 .diagnostics-log-detail {
   @apply mt-2 mb-0 text-sm leading-6 break-words;
   color: var(--text-muted);
+}
+
+.diagnostics-log-pre {
+  @apply m-0 overflow-x-auto rounded-2xl border px-3 py-3 text-xs leading-6 whitespace-pre-wrap;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 74%, transparent);
+  color: var(--text-default);
 }
 
 .workflow-actions {

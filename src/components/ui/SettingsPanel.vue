@@ -19,14 +19,9 @@
             </UiButton>
           </DialogClose>
         </header>
-        <ScrollAreaRoot class="settings-panel-scroll">
-          <ScrollAreaViewport class="settings-panel-body">
-            <slot />
-          </ScrollAreaViewport>
-          <ScrollAreaScrollbar class="settings-panel-scrollbar" orientation="vertical">
-            <ScrollAreaThumb class="settings-panel-scrollbar-thumb" />
-          </ScrollAreaScrollbar>
-        </ScrollAreaRoot>
+        <div class="settings-panel-body">
+          <slot />
+        </div>
       </DialogContent>
     </DialogPortal>
   </DialogRoot>
@@ -40,10 +35,6 @@ import {
   DialogPortal,
   DialogRoot,
   DialogTitle,
-  ScrollAreaRoot,
-  ScrollAreaScrollbar,
-  ScrollAreaThumb,
-  ScrollAreaViewport,
 } from 'radix-vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
@@ -85,8 +76,10 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel-header {
-  @apply flex items-start justify-between gap-4 pb-5;
+  @apply sticky top-0 z-[1] flex items-start justify-between gap-4 pb-5;
   border-bottom: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 97%, transparent), var(--surface-base));
 }
 
 .settings-panel-eyebrow {
@@ -109,19 +102,8 @@ function onOpenChange(value: boolean): void {
 }
 
 .settings-panel-body {
-  @apply flex h-full min-h-0 flex-col gap-6 overflow-y-auto pt-5 pr-4;
-}
-
-.settings-panel-scroll {
-  @apply mt-1 min-h-0 flex-1;
-}
-
-.settings-panel-scrollbar {
-  @apply flex w-2.5 touch-none select-none p-0.5;
-}
-
-.settings-panel-scrollbar-thumb {
-  @apply relative flex-1 rounded-full;
-  background: color-mix(in srgb, var(--border-strong) 88%, transparent);
+  @apply mt-1 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-5 pr-2;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 </style>

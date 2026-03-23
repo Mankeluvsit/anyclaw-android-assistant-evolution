@@ -1,5 +1,5 @@
 <template>
-  <form class="thread-composer" @submit.prevent="onSubmit">
+  <section class="thread-composer">
     <div class="thread-composer-shell">
       <div class="thread-composer-badge-row">
         <span class="thread-composer-badge">Updated composer</span>
@@ -100,15 +100,16 @@
         <button
           v-else
           class="thread-composer-submit"
-          type="submit"
+          type="button"
           :aria-label="t('composer_send_message')"
           :disabled="!canSubmit"
+          @click="onSubmit"
         >
           <IconTablerArrowUp class="thread-composer-submit-icon" />
         </button>
       </div>
     </div>
-  </form>
+  </section>
 </template>
 
 <script setup lang="ts">

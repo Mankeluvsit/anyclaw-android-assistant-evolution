@@ -290,7 +290,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     Toast.makeText(
                         this@MainActivity,
-                        "页面渲染异常，正在自动恢复到可用状态",
+                        "The page renderer stalled. Recovering to a usable state.",
                         Toast.LENGTH_LONG,
                     ).show()
                     pendingLaunchUrl = buildCodexRootUrl()
@@ -403,7 +403,7 @@ class MainActivity : AppCompatActivity() {
     private fun triggerOpenClawSafeRecovery(originalUrl: String?) {
         if (openClawRecoveryAttempts >= 2) return
         openClawRecoveryAttempts += 1
-        Toast.makeText(this, "检测到聊天页卡住，正在自动降载恢复", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Chat page is stuck. Recovering with a lighter history load.", Toast.LENGTH_SHORT).show()
         webView.evaluateJavascript(
             "(function(){try{localStorage.setItem('anyclaw.chat.history.limit','20');localStorage.setItem('anyclaw.chat.render.limit','20');}catch(_){}})();",
             null,
@@ -1035,7 +1035,7 @@ class MainActivity : AppCompatActivity() {
             val server = ShizukuShellBridgeServer(this)
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             shizukuBridgeServer = server
-            Log.i(TAG, "Shizuku bridge server started on ${ShizukuShellBridgeServer.BRIDGE_PORT}")
+            Log.i(TAG, "Shizuku bridge server started on ${ShizukuShellBridgeServer.bridgePortForPackage(packageName)}")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to start Shizuku bridge server: ${e.message}")
         }

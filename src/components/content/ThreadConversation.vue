@@ -112,11 +112,17 @@
                 class="message-card"
                 :data-role="message.role"
               >
+                <div v-if="message.messageType === 'worked'" class="worked-separator" aria-live="polite">
+                  <span class="worked-separator-line" aria-hidden="true" />
+                  <p class="worked-separator-text">{{ message.text }}</p>
+                  <span class="worked-separator-line" aria-hidden="true" />
+                </div>
+                <ThreadMessageContent v-else :text="message.text" />
                 <div
                   v-if="message.messageType !== 'worked' && (message.role === 'assistant' || message.role === 'user')"
                   class="message-actions-inline"
                 >
-                  <UiDropdownMenu :align="message.role === 'user' ? 'start' : 'end'">
+                  <UiDropdownMenu :align="message.role === 'user' ? 'end' : 'start'">
                     <template #trigger>
                       <button class="message-action-trigger" type="button" :aria-label="t('message_action_more')">
                         <IconTablerDots class="message-action-trigger-icon" />
@@ -157,33 +163,6 @@
                     </UiDropdownMenuItem>
                   </UiDropdownMenu>
                 </div>
-                <div v-if="message.messageType === 'worked'" class="worked-separator" aria-live="polite">
-                  <span class="worked-separator-line" aria-hidden="true" />
-                  <p class="worked-separator-text">{{ message.text }}</p>
-                  <span class="worked-separator-line" aria-hidden="true" />
-                </div>
-                <p v-else class="message-text">
-                  <template v-for="(segment, index) in parseInlineSegments(message.text)" :key="`seg-${index}`">
-                    <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
-                    <button
-                      v-else-if="segment.kind === 'link'"
-                      type="button"
-                      class="message-link"
-                      @click="openExternalLink(segment.url)"
-                    >
-                      {{ segment.label }}
-                    </button>
-                    <button
-                      v-else-if="segment.kind === 'file'"
-                      type="button"
-                      class="message-file-link"
-                      @click="copyFileReference(segment.value)"
-                    >
-                      {{ segment.displayName }}
-                    </button>
-                    <code v-else class="message-inline-code">{{ segment.value }}</code>
-                  </template>
-                </p>
               </article>
             </article>
           </div>
@@ -194,12 +173,16 @@
           <div class="message-stack">
             <article class="live-overlay-inline" aria-live="polite">
               <p class="live-overlay-label">{{ liveOverlay.activityLabel }}</p>
-              <p
+              <details
                 v-if="liveOverlay.reasoningText"
-                class="live-overlay-reasoning"
+                class="live-overlay-reasoning-shell"
+                :open="liveOverlay.reasoningText.length < 220"
               >
-                {{ liveOverlay.reasoningText }}
-              </p>
+                <summary class="live-overlay-reasoning-summary">{{ t('conversation_thinking_label') }}</summary>
+                <p class="live-overlay-reasoning">
+                  {{ liveOverlay.reasoningText }}
+                </p>
+              </details>
               <p v-if="liveOverlay.errorText" class="live-overlay-error">{{ liveOverlay.errorText }}</p>
             </article>
           </div>
@@ -230,6 +213,7 @@ import { ScrollAreaRoot, ScrollAreaScrollbar, ScrollAreaThumb, ScrollAreaViewpor
 import type { ThreadScrollState, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import IconTablerDots from '../icons/IconTablerDots.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
+import ThreadMessageContent from './ThreadMessageContent.vue'
 import { useUiI18n } from '../../composables/useUiI18n'
 import UiDropdownMenu from '../ui/UiDropdownMenu.vue'
 import UiDropdownMenuItem from '../ui/UiDropdownMenuItem.vue'
@@ -262,12 +246,6 @@ const modalImageUrl = ref('')
 const toolQuestionAnswers = ref<Record<string, string>>({})
 const toolQuestionOtherAnswers = ref<Record<string, string>>({})
 const BOTTOM_THRESHOLD_PX = 16
-type InlineSegment =
-  | { kind: 'text'; value: string }
-  | { kind: 'code'; value: string }
-  | { kind: 'file'; value: string; displayName: string }
-  | { kind: 'link'; url: string; label: string }
-
 let scrollRestoreFrame = 0
 let bottomLockFrame = 0
 let bottomLockFramesLeft = 0
@@ -279,169 +257,6 @@ type ParsedToolQuestion = {
   question: string
   isOther: boolean
   options: string[]
-}
-
-function isFilePath(value: string): boolean {
-  if (!value || /\s/u.test(value)) return false
-  if (value.endsWith('/') || value.endsWith('\\')) return false
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(value)) return false
-
-  const looksLikeUnixAbsolute = value.startsWith('/')
-  const looksLikeWindowsAbsolute = /^[A-Za-z]:[\\/]/u.test(value)
-  const looksLikeRelative = value.startsWith('./') || value.startsWith('../') || value.startsWith('~/')
-  const hasPathSeparator = value.includes('/') || value.includes('\\')
-  return looksLikeUnixAbsolute || looksLikeWindowsAbsolute || looksLikeRelative || hasPathSeparator
-}
-
-function getBasename(pathValue: string): string {
-  const normalized = pathValue.replace(/\\/gu, '/')
-  const name = normalized.split('/').filter(Boolean).pop()
-  return name || pathValue
-}
-
-function parseFileReference(value: string): { path: string; line: number | null } | null {
-  if (!value) return null
-
-  let pathValue = value
-  let line: number | null = null
-
-  const hashLineMatch = pathValue.match(/^(.*)#L(\d+)(?:C\d+)?$/u)
-  if (hashLineMatch) {
-    pathValue = hashLineMatch[1]
-    line = Number(hashLineMatch[2])
-  } else {
-    const colonLineMatch = pathValue.match(/^(.*):(\d+)(?::\d+)?$/u)
-    if (colonLineMatch) {
-      pathValue = colonLineMatch[1]
-      line = Number(colonLineMatch[2])
-    }
-  }
-
-  if (!isFilePath(pathValue)) return null
-  return { path: pathValue, line }
-}
-
-const LINK_PATTERN = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>)\]]+)/g
-
-function parseLinksInText(text: string): InlineSegment[] {
-  const segments: InlineSegment[] = []
-  let lastIndex = 0
-
-  for (const match of text.matchAll(LINK_PATTERN)) {
-    const matchStart = match.index
-    if (matchStart > lastIndex) {
-      segments.push({ kind: 'text', value: text.slice(lastIndex, matchStart) })
-    }
-
-    if (match[1] && match[2]) {
-      segments.push({ kind: 'link', label: match[1], url: match[2] })
-    } else if (match[3] && match[4]) {
-      const target = match[4]
-      const fileRef = parseFileReference(target)
-      if (fileRef) {
-        const displayName = getBasename(fileRef.path)
-        segments.push({ kind: 'file', value: target, displayName: match[3] })
-      } else {
-        segments.push({ kind: 'text', value: match[3] })
-      }
-    } else if (match[5]) {
-      segments.push({ kind: 'link', label: match[5], url: match[5] })
-    }
-
-    lastIndex = matchStart + match[0].length
-  }
-
-  if (lastIndex < text.length) {
-    segments.push({ kind: 'text', value: text.slice(lastIndex) })
-  }
-
-  return segments.length > 0 ? segments : [{ kind: 'text', value: text }]
-}
-
-function parseInlineSegments(text: string): InlineSegment[] {
-  const codeSegments = parseCodeSegments(text)
-  const result: InlineSegment[] = []
-
-  for (const segment of codeSegments) {
-    if (segment.kind === 'text') {
-      result.push(...parseLinksInText(segment.value))
-    } else {
-      result.push(segment)
-    }
-  }
-
-  return result
-}
-
-function parseCodeSegments(text: string): InlineSegment[] {
-  if (!text.includes('`')) return [{ kind: 'text', value: text }]
-
-  const segments: InlineSegment[] = []
-  let cursor = 0
-  let textStart = 0
-
-  while (cursor < text.length) {
-    if (text[cursor] !== '`') {
-      cursor += 1
-      continue
-    }
-
-    let openLength = 1
-    while (cursor + openLength < text.length && text[cursor + openLength] === '`') {
-      openLength += 1
-    }
-    const delimiter = '`'.repeat(openLength)
-
-    let searchFrom = cursor + openLength
-    let closingStart = -1
-    while (searchFrom < text.length) {
-      const candidate = text.indexOf(delimiter, searchFrom)
-      if (candidate < 0) break
-
-      const hasBacktickBefore = candidate > 0 && text[candidate - 1] === '`'
-      const hasBacktickAfter =
-        candidate + openLength < text.length && text[candidate + openLength] === '`'
-      const hasNewLineInside = text.slice(cursor + openLength, candidate).includes('\n')
-
-      if (!hasBacktickBefore && !hasBacktickAfter && !hasNewLineInside) {
-        closingStart = candidate
-        break
-      }
-      searchFrom = candidate + 1
-    }
-
-    if (closingStart < 0) {
-      cursor += openLength
-      continue
-    }
-
-    if (cursor > textStart) {
-      segments.push({ kind: 'text', value: text.slice(textStart, cursor) })
-    }
-
-    const token = text.slice(cursor + openLength, closingStart)
-    if (token.length > 0) {
-      const fileReference = parseFileReference(token)
-      if (fileReference) {
-        const basename = getBasename(fileReference.path)
-        const displayName = fileReference.line ? `${basename} (line ${String(fileReference.line)})` : basename
-        segments.push({ kind: 'file', value: token, displayName })
-      } else {
-        segments.push({ kind: 'code', value: token })
-      }
-    } else {
-      segments.push({ kind: 'text', value: `${delimiter}${delimiter}` })
-    }
-
-    cursor = closingStart + openLength
-    textStart = cursor
-  }
-
-  if (textStart < text.length) {
-    segments.push({ kind: 'text', value: text.slice(textStart) })
-  }
-
-  return segments
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -782,16 +597,6 @@ function onBranchFromMessage(messageId: string): void {
   emit('branchFromMessage', messageId)
 }
 
-function openExternalLink(url: string): void {
-  if (typeof window === 'undefined') return
-  window.open(url, '_blank', 'noopener,noreferrer')
-}
-
-function copyFileReference(value: string): void {
-  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
-  void navigator.clipboard.writeText(value)
-}
-
 onBeforeUnmount(() => {
   if (scrollRestoreFrame) {
     cancelAnimationFrame(scrollRestoreFrame)
@@ -824,7 +629,7 @@ onBeforeUnmount(() => {
 }
 
 .conversation-list-inner {
-  @apply m-0 flex min-h-full list-none flex-col gap-3 px-6 py-0;
+  @apply m-0 flex min-h-full list-none flex-col gap-5 px-4 py-0 sm:px-6;
 }
 
 .conversation-scroll {
@@ -853,7 +658,7 @@ onBeforeUnmount(() => {
 }
 
 .message-row {
-  @apply relative w-full max-w-180 mx-auto flex;
+  @apply relative mx-auto flex w-full max-w-180;
 }
 
 .message-row[data-role='user'] {
@@ -949,7 +754,10 @@ onBeforeUnmount(() => {
 }
 
 .live-overlay-inline {
-  @apply w-full max-w-180 px-0 py-1 flex flex-col gap-1;
+  @apply flex w-full max-w-180 flex-col gap-2 rounded-2xl border px-4 py-3;
+  border-color: color-mix(in srgb, var(--accent-primary) 18%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  box-shadow: var(--shadow-soft);
 }
 
 .live-overlay-label {
@@ -957,8 +765,19 @@ onBeforeUnmount(() => {
   color: var(--text-default);
 }
 
+.live-overlay-reasoning-shell {
+  @apply rounded-2xl border px-3 py-2;
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-hover) 74%, transparent);
+}
+
+.live-overlay-reasoning-summary {
+  @apply cursor-pointer text-[11px] font-semibold uppercase tracking-[0.16em];
+  color: var(--text-muted);
+}
+
 .live-overlay-reasoning {
-  @apply m-0 text-sm leading-5 whitespace-pre-wrap;
+  @apply mb-0 mt-2 text-sm leading-6 whitespace-pre-wrap;
   color: var(--text-muted);
 }
 
@@ -999,21 +818,11 @@ onBeforeUnmount(() => {
 }
 
 .message-card {
-  @apply relative max-w-[min(76ch,100%)] px-0 py-0 bg-transparent border-none rounded-none;
-}
-
-.message-text {
-  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap;
-  color: var(--text-default);
+  @apply flex max-w-[min(76ch,100%)] flex-col gap-2 px-0 py-0 bg-transparent border-none rounded-none;
 }
 
 .message-actions-inline {
-  @apply absolute top-2 right-2 z-10;
-}
-
-.message-card[data-role='assistant'] .message-actions-inline,
-.message-card[data-role='system'] .message-actions-inline {
-  @apply top-0 right-0;
+  @apply flex justify-end;
 }
 
 .message-action-trigger {
@@ -1030,23 +839,6 @@ onBeforeUnmount(() => {
 
 .message-action-trigger-icon {
   @apply h-4 w-4;
-}
-
-.message-inline-code {
-  @apply rounded-md border px-1.5 py-0.5 text-[0.875em] leading-[1.4] font-mono;
-  border-color: var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-hover) 84%, transparent);
-  color: var(--text-default);
-}
-
-.message-link {
-  @apply inline border-0 bg-transparent p-0 text-sm leading-relaxed underline underline-offset-2;
-  color: var(--accent-primary);
-}
-
-.message-file-link {
-  @apply inline border-0 bg-transparent p-0 text-sm leading-relaxed no-underline hover:underline underline-offset-2;
-  color: var(--accent-primary);
 }
 
 .message-stack[data-role='user'] {
@@ -1069,7 +861,10 @@ onBeforeUnmount(() => {
 
 .message-card[data-role='assistant'],
 .message-card[data-role='system'] {
-  @apply px-0 py-0 bg-transparent border-none rounded-none;
+  @apply rounded-[1.4rem] border px-4 py-3;
+  border-color: color-mix(in srgb, var(--border-subtle) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 90%, transparent);
+  box-shadow: var(--shadow-soft);
 }
 
 .conversation-item[data-message-type='worked'] .message-stack,
@@ -1090,6 +885,18 @@ onBeforeUnmount(() => {
 .worked-separator-text {
   @apply m-0 text-sm leading-relaxed font-normal;
   color: var(--text-muted);
+}
+
+@media (max-width: 960px) {
+  .message-row {
+    @apply max-w-full;
+  }
+
+  .message-card[data-role='assistant'],
+  .message-card[data-role='system'],
+  .message-card[data-role='user'] {
+    max-width: min(100%, 42rem);
+  }
 }
 
 .image-modal-backdrop {

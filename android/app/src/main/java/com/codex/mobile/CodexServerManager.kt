@@ -62,6 +62,14 @@ class CodexServerManager(private val context: Context) {
         @JvmStatic
         fun openClawControlUiPortForPackage(packageName: String): Int =
             if (useIsolatedPortsForPackage(packageName)) BASE_OPENCLAW_CONTROL_UI_PORT + ISOLATED_PORT_OFFSET else BASE_OPENCLAW_CONTROL_UI_PORT
+
+        @JvmStatic
+        fun exportDirNameForPackage(packageName: String): String =
+            if (useIsolatedPortsForPackage(packageName)) "AnyClawBeta" else "AnyClaw"
+
+        @JvmStatic
+        fun screenshotDirNameForPackage(packageName: String): String =
+            if (useIsolatedPortsForPackage(packageName)) "AnyClawShotsBeta" else "AnyClawShots"
     }
 
     private var serverProcess: Process? = null
@@ -83,6 +91,47 @@ class CodexServerManager(private val context: Context) {
                 true
             }
         }
+
+    private fun openClawStateDir(paths: BootstrapInstaller.Paths): File =
+        File(paths.homeDir, ".openclaw-android/state").apply { mkdirs() }
+
+    private fun resetOpenClawLog(paths: BootstrapInstaller.Paths, fileName: String) {
+        runCatching {
+            File(openClawStateDir(paths), fileName).writeText("")
+        }
+    }
+
+    private fun appendOpenClawLog(paths: BootstrapInstaller.Paths, fileName: String, line: String) {
+        runCatching {
+            val file = File(openClawStateDir(paths), fileName)
+            file.appendText("${java.time.Instant.now()} $line\n")
+        }
+    }
+
+    private fun writeOpenClawStatus(
+        paths: BootstrapInstaller.Paths,
+        fileName: String,
+        state: String,
+        detail: String,
+        extra: JSONObject? = null,
+    ) {
+        runCatching {
+            val payload = JSONObject()
+            payload.put("state", state)
+            payload.put("detail", detail)
+            payload.put("updatedAt", java.time.Instant.now().toString())
+            payload.put("gatewayPort", openClawGatewayPort)
+            payload.put("controlUiPort", openClawControlUiPort)
+            if (extra != null) {
+                val iterator = extra.keys()
+                while (iterator.hasNext()) {
+                    val key = iterator.next()
+                    payload.put(key, extra.opt(key))
+                }
+            }
+            File(openClawStateDir(paths), fileName).writeText(payload.toString(2) + "\n")
+        }
+    }
 
     // ── Shell helpers ──────────────────────────────────────────────────────
 
@@ -718,6 +767,9 @@ H3
             Log.w(TAG, "koffi build failed (OpenClaw may have limited functionality)")
         }
 
+        onProgress("Repairing davey Android binding…")
+        ensureDaveyAndroidBinding(prefix, onProgress)
+
         // Patch hardcoded paths in the installed JS files
         onProgress("Patching OpenClaw paths…")
         patchOpenClawPaths()
@@ -758,6 +810,9 @@ H3
         if (!koffiBuilt) {
             Log.w(TAG, "koffi rebuild failed after OpenClaw alignment")
         }
+
+        onProgress("Repairing davey Android binding…")
+        ensureDaveyAndroidBinding(prefix, onProgress)
 
         onProgress("Re-applying OpenClaw Android patches…")
         patchOpenClawPaths()
@@ -814,6 +869,114 @@ H3
 
         Log.i(TAG, "koffi native module built successfully")
         return true
+    }
+
+    private fun ensureDaveyAndroidBinding(prefix: String, onProgress: (String) -> Unit): Boolean {
+        val daveyDir = "$prefix/lib/node_modules/openclaw/node_modules/@snazzah/davey"
+        if (!File(daveyDir, "package.json").exists()) {
+            Log.i(TAG, "davey package not present, skipping Android binding repair")
+            return true
+        }
+
+        val checkCmd = """
+            node -e "
+              const fs = require('fs');
+              const path = require('path');
+              const daveyDir = '$daveyDir';
+              const pkg = JSON.parse(fs.readFileSync(path.join(daveyDir, 'package.json'), 'utf8'));
+              function isMusl() {
+                try {
+                  const report = process.report && typeof process.report.getReport === 'function'
+                    ? process.report.getReport()
+                    : null;
+                  return !((report || {}).header || {}).glibcVersionRuntime;
+                } catch (_) {
+                  return false;
+                }
+              }
+              let packageName = '';
+              if (process.platform === 'linux' && process.arch === 'arm64') {
+                packageName = isMusl() ? '@snazzah/davey-linux-arm64-musl' : '@snazzah/davey-linux-arm64-gnu';
+              } else if (process.platform === 'android' && process.arch === 'arm64') {
+                packageName = '@snazzah/davey-android-arm64';
+              }
+              const version = ((pkg.optionalDependencies || {})[packageName] || pkg.version || '').trim();
+              const bindingDir = packageName ? path.join(daveyDir, '..', packageName.split('/')[1]) : '';
+              const bindingPkg = path.join(bindingDir, 'package.json');
+              if (packageName && version && fs.existsSync(bindingPkg)) {
+                try {
+                  const installed = JSON.parse(fs.readFileSync(bindingPkg, 'utf8')).version || '';
+                  if (installed.trim() === version) {
+                    console.log('davey-binding-ok:' + packageName + ':' + version);
+                    process.exit(0);
+                  }
+                } catch (_) {}
+              }
+              console.log('davey-binding-missing:' + packageName + ':' + version);
+              process.exit(2);
+            "
+        """.trimIndent()
+
+        val checkCode = runInPrefix(checkCmd, onOutput = { Log.d(TAG, "[davey-check] $it") })
+        if (checkCode == 0) return true
+
+        onProgress("Installing davey Android binding…")
+        val installCmd = """
+            set -e
+            DAVEY_DIR="$daveyDir"
+            SCOPE_DIR="$prefix/lib/node_modules/openclaw/node_modules/@snazzah"
+            RESOLVED=$(node -e "
+              const fs = require('fs');
+              const path = require('path');
+              const pkg = JSON.parse(fs.readFileSync(path.join('$daveyDir', 'package.json'), 'utf8'));
+              function isMusl() {
+                try {
+                  const report = process.report && typeof process.report.getReport === 'function'
+                    ? process.report.getReport()
+                    : null;
+                  return !((report || {}).header || {}).glibcVersionRuntime;
+                } catch (_) {
+                  return false;
+                }
+              }
+              let packageName = '';
+              if (process.platform === 'linux' && process.arch === 'arm64') {
+                packageName = isMusl() ? '@snazzah/davey-linux-arm64-musl' : '@snazzah/davey-linux-arm64-gnu';
+              } else if (process.platform === 'android' && process.arch === 'arm64') {
+                packageName = '@snazzah/davey-android-arm64';
+              }
+              const version = ((pkg.optionalDependencies || {})[packageName] || pkg.version || '').trim();
+              process.stdout.write(packageName + '|' + version);
+            ")
+            PACKAGE_NAME="${'$'}{RESOLVED%%|*}"
+            VERSION="${'$'}{RESOLVED##*|}"
+            if [ -z "${'$'}PACKAGE_NAME" ] || [ -z "${'$'}VERSION" ]; then
+              echo "No compatible davey binding package found"
+              exit 1
+            fi
+            PACKAGE_DIR_NAME="${'$'}{PACKAGE_NAME##*/}"
+            mkdir -p "${'$'}SCOPE_DIR"
+            TMP_TGZ="$prefix/tmp/${'$'}PACKAGE_DIR_NAME-${'$'}VERSION.tgz"
+            TMP_DIR="$prefix/tmp/${'$'}PACKAGE_DIR_NAME-${'$'}VERSION"
+            rm -f "${'$'}TMP_TGZ"
+            rm -rf "${'$'}TMP_DIR" "${'$'}SCOPE_DIR/${'$'}PACKAGE_DIR_NAME"
+            curl -L --fail --max-time 60 "https://registry.npmjs.org/${'$'}PACKAGE_NAME/-/${'$'}PACKAGE_DIR_NAME-${'$'}VERSION.tgz" -o "${'$'}TMP_TGZ"
+            mkdir -p "${'$'}TMP_DIR"
+            tar -xzf "${'$'}TMP_TGZ" -C "${'$'}TMP_DIR"
+            mv "${'$'}TMP_DIR/package" "${'$'}SCOPE_DIR/${'$'}PACKAGE_DIR_NAME"
+            rm -f "${'$'}TMP_TGZ"
+            rm -rf "${'$'}TMP_DIR"
+            echo "Installed davey binding ${'$'}PACKAGE_NAME@${'$'}VERSION"
+        """.trimIndent()
+
+        val installCode = runInPrefix(installCmd, onOutput = { onProgress(it) })
+        if (installCode != 0) {
+            Log.e(TAG, "davey Android binding repair failed with code $installCode")
+            return false
+        }
+
+        val verifyCode = runInPrefix(checkCmd, onOutput = { Log.d(TAG, "[davey-verify] $it") })
+        return verifyCode == 0
     }
 
     /**
@@ -1023,7 +1186,10 @@ H3
         if (!searchSuiteConfig.has("timeoutSeconds")) searchSuiteConfig.put("timeoutSeconds", 20)
         if (!searchSuiteConfig.has("maxResults")) searchSuiteConfig.put("maxResults", 6)
         if (!searchSuiteConfig.has("maxChars")) searchSuiteConfig.put("maxChars", 12000)
-        if (!searchSuiteConfig.has("webBridgeUrl")) searchSuiteConfig.put("webBridgeUrl", "http://127.0.0.1:${ShizukuShellBridgeServer.BRIDGE_PORT}/web/call")
+        if (!searchSuiteConfig.has("webBridgeUrl")) {
+            val bridgePort = ShizukuShellBridgeServer.bridgePortForPackage(context.packageName)
+            searchSuiteConfig.put("webBridgeUrl", "http://127.0.0.1:$bridgePort/web/call")
+        }
         if (!searchSuiteConfig.has("tavilyBaseUrl")) searchSuiteConfig.put("tavilyBaseUrl", "https://api.tavily.com/search")
         val configuredUa = searchSuiteConfig.optString("userAgent", "").trim()
         if (configuredUa.isEmpty() || configuredUa.startsWith("AnyClawSearchSuite/1.")) {
@@ -1047,8 +1213,9 @@ H3
         deviceSuiteEntry.put("enabled", true)
         val deviceSuiteConfig = ensureObject(deviceSuiteEntry, "config")
         if (!deviceSuiteConfig.has("timeoutSeconds")) deviceSuiteConfig.put("timeoutSeconds", 20)
-        if (!deviceSuiteConfig.has("screenshotDir")) deviceSuiteConfig.put("screenshotDir", "/sdcard/Download/AnyClawShots")
-        if (!deviceSuiteConfig.has("uiDumpPath")) deviceSuiteConfig.put("uiDumpPath", "/sdcard/Download/AnyClawShots/ui_dump.xml")
+        val screenshotDirName = screenshotDirNameForPackage(context.packageName)
+        if (!deviceSuiteConfig.has("screenshotDir")) deviceSuiteConfig.put("screenshotDir", "/sdcard/Download/$screenshotDirName")
+        if (!deviceSuiteConfig.has("uiDumpPath")) deviceSuiteConfig.put("uiDumpPath", "/sdcard/Download/$screenshotDirName/ui_dump.xml")
         if (!deviceSuiteConfig.has("maxUiNodes")) deviceSuiteConfig.put("maxUiNodes", 180)
         if (!deviceSuiteConfig.has("inputVerifyReadback")) deviceSuiteConfig.put("inputVerifyReadback", false)
         if (!deviceSuiteConfig.has("inputImePriority")) {
@@ -1155,6 +1322,8 @@ H3
     fun runOpenClawPreflight(onProgress: (String) -> Unit): Boolean {
         onProgress("Repairing OpenClaw toolchain links…")
         ensureOpenClawToolchain(onProgress)
+        onProgress("Repairing davey Android binding…")
+        ensureDaveyAndroidBinding(BootstrapInstaller.getPaths(context).prefixDir, onProgress)
         onProgress("Validating ar/ranlib preflight…")
         if (runOpenClawToolchainPreflight(onProgress)) {
             return true
@@ -1163,6 +1332,7 @@ H3
         onProgress("Preflight failed, running recovery scripts…")
         runExternalRecoveryScripts(onProgress)
         ensureOpenClawToolchain(onProgress)
+        ensureDaveyAndroidBinding(BootstrapInstaller.getPaths(context).prefixDir, onProgress)
         return runOpenClawToolchainPreflight(onProgress)
     }
 
@@ -1242,6 +1412,8 @@ H3
         }
 
         val paths = BootstrapInstaller.getPaths(context)
+        resetOpenClawLog(paths, "gateway.log")
+        writeOpenClawStatus(paths, "gateway-status.json", "starting", "Launching OpenClaw gateway")
         sanitizeHeartbeatConfigOnDisk(paths.homeDir)
         ensureOpenClawGatewayHistoryByteCap()
 
@@ -1288,9 +1460,18 @@ H3
             var line = reader.readLine()
             while (line != null) {
                 Log.d(TAG, "[openclaw-gw] $line")
+                appendOpenClawLog(paths, "gateway.log", line)
                 line = reader.readLine()
             }
-            Log.i(TAG, "OpenClaw gateway exited with code: ${proc.waitFor()}")
+            val exitCode = proc.waitFor()
+            Log.i(TAG, "OpenClaw gateway exited with code: $exitCode")
+            writeOpenClawStatus(
+                paths,
+                "gateway-status.json",
+                "stopped",
+                "OpenClaw gateway exited with code $exitCode",
+                JSONObject().put("exitCode", exitCode),
+            )
         }.start()
 
         // Heartbeat bootstrap must not depend on a short fixed gateway warmup window.
@@ -1300,10 +1481,22 @@ H3
         Thread.sleep(1200)
         if (isOpenClawGatewayResponsive()) {
             Log.i(TAG, "OpenClaw gateway started on port $openClawGatewayPort")
+            writeOpenClawStatus(
+                paths,
+                "gateway-status.json",
+                "running",
+                "OpenClaw gateway is responsive on port $openClawGatewayPort",
+            )
             return true
         }
 
         Log.w(TAG, "OpenClaw gateway process launched but not responsive yet")
+        writeOpenClawStatus(
+            paths,
+            "gateway-status.json",
+            "offline",
+            "Gateway process launched but did not become responsive",
+        )
         return false
     }
 
@@ -1384,8 +1577,21 @@ H3
 
         if (!File(controlUiRoot).exists()) {
             Log.w(TAG, "OpenClaw control-ui directory not found at $controlUiRoot")
+            writeOpenClawStatus(
+                paths,
+                "control-ui-status.json",
+                "missing",
+                "OpenClaw control-ui directory not found at $controlUiRoot",
+            )
             return false
         }
+        resetOpenClawLog(paths, "control-ui.log")
+        writeOpenClawStatus(
+            paths,
+            "control-ui-status.json",
+            "starting",
+            "Launching OpenClaw control UI server",
+        )
         ensureOpenClawControlUiHistoryPatch(controlUiRoot)
         killOrphanOpenClawControlUiProcesses(paths)
 
@@ -1564,23 +1770,45 @@ H3
                 var line = reader.readLine()
                 while (line != null) {
                     Log.d(TAG, "[openclaw-ui] $line")
+                    appendOpenClawLog(paths, "control-ui.log", line)
                     line = reader.readLine()
                 }
-                Log.i(TAG, "OpenClaw Control UI server exited with code: ${proc.waitFor()}")
+                val exitCode = proc.waitFor()
+                Log.i(TAG, "OpenClaw Control UI server exited with code: $exitCode")
+                writeOpenClawStatus(
+                    paths,
+                    "control-ui-status.json",
+                    "stopped",
+                    "OpenClaw Control UI exited with code $exitCode",
+                    JSONObject().put("exitCode", exitCode),
+                )
             }.start()
 
             if (waitForOpenClawControlUiReady()) {
                 Log.i(TAG, "OpenClaw Control UI server started on port $openClawControlUiPort")
+                writeOpenClawStatus(
+                    paths,
+                    "control-ui-status.json",
+                    "running",
+                    "Control UI is serving on port $openClawControlUiPort",
+                )
                 return true
             }
 
             Log.w(TAG, "OpenClaw Control UI readiness check failed (attempt=$attempt)")
+            appendOpenClawLog(paths, "control-ui.log", "Readiness check failed on attempt $attempt")
             stopTrackedOpenClawControlUiProcess()
             killOrphanOpenClawControlUiProcesses(paths)
             Thread.sleep(300)
         }
 
         Log.e(TAG, "OpenClaw Control UI failed to become ready on port $openClawControlUiPort")
+        writeOpenClawStatus(
+            paths,
+            "control-ui-status.json",
+            "offline",
+            "OpenClaw Control UI failed to become ready on port $openClawControlUiPort",
+        )
         return false
     }
 
@@ -1598,6 +1826,8 @@ H3
         openClawGatewayProcess = null
         openClawControlUiProcess?.destroy()
         openClawControlUiProcess = null
+        writeOpenClawStatus(paths, "gateway-status.json", "stopped", "Gateway stopped by user action")
+        writeOpenClawStatus(paths, "control-ui-status.json", "stopped", "Control UI stopped by user action")
 
         runInPrefix(
             """
@@ -1620,6 +1850,9 @@ H3
     }
 
     fun reconnectOpenClawGateway(): Boolean {
+        val paths = BootstrapInstaller.getPaths(context)
+        writeOpenClawStatus(paths, "gateway-status.json", "starting", "Restarting OpenClaw gateway")
+        writeOpenClawStatus(paths, "control-ui-status.json", "starting", "Restarting OpenClaw control UI")
         configureOpenClawAuth()
         val gatewayOk = startOpenClawGateway()
         if (!gatewayOk) return false
@@ -1990,7 +2223,8 @@ WEOF
             pidFile.delete()
         }
 
-        val env = buildEnvironment(paths)
+        val env = buildEnvironment(paths).toMutableMap()
+        env["ANYCLAW_PROXY_PORT"] = proxyPort.toString()
         val shell = "${paths.prefixDir}/bin/sh"
         val cmd = "exec node ${proxyScript.absolutePath}"
 
@@ -2368,16 +2602,17 @@ WEOF
     }
 
     fun ensureStorageBridge() {
+        val exportDirName = exportDirNameForPackage(context.packageName)
         val script = """
             mkdir -p "${'$'}HOME/storage" 2>/dev/null || true
             ln -sfn /sdcard "${'$'}HOME/sdcard" 2>/dev/null || true
             ln -sfn /storage/emulated/0 "${'$'}HOME/storage/shared" 2>/dev/null || true
             ln -sfn /sdcard/Download "${'$'}HOME/storage/downloads" 2>/dev/null || true
 
-            mkdir -p /sdcard/Download/AnyClaw 2>/dev/null || true
-            mkdir -p /sdcard/Download/下载管理/AnyClaw 2>/dev/null || true
-            mkdir -p /sdcard/下载管理/AnyClaw 2>/dev/null || true
-            ln -sfn /sdcard/Download/AnyClaw "${'$'}HOME/storage/anyclaw" 2>/dev/null || true
+            mkdir -p /sdcard/Download/$exportDirName 2>/dev/null || true
+            mkdir -p /sdcard/Download/下载管理/$exportDirName 2>/dev/null || true
+            mkdir -p /sdcard/下载管理/$exportDirName 2>/dev/null || true
+            ln -sfn /sdcard/Download/$exportDirName "${'$'}HOME/storage/anyclaw" 2>/dev/null || true
         """.trimIndent()
 
         val code = runInPrefix(script)
@@ -2985,7 +3220,7 @@ EOF
     fun ensureShizukuBridgeScripts() {
         val paths = BootstrapInstaller.getPaths(context)
         val prefix = paths.prefixDir
-        val port = ShizukuShellBridgeServer.BRIDGE_PORT
+        val port = ShizukuShellBridgeServer.bridgePortForPackage(context.packageName)
         val cmd = """
             cat > "$prefix/bin/shizuku-shell" <<'EOF'
 #!/system/bin/sh
@@ -3477,7 +3712,7 @@ EOF
             "ANDROID_ROOT" to "/system",
             "ANDROID_STORAGE" to "/sdcard",
             "EXTERNAL_STORAGE" to "/sdcard",
-            "ANYCLAW_EXPORT_DIR" to "/sdcard/Download/AnyClaw",
+            "ANYCLAW_EXPORT_DIR" to "/sdcard/Download/${exportDirNameForPackage(context.packageName)}",
             "APT_CONFIG" to "${paths.prefixDir}/etc/apt/apt.conf",
             "DPKG_ADMINDIR" to "${paths.prefixDir}/var/lib/dpkg",
             "SSL_CERT_FILE" to "${paths.prefixDir}/etc/tls/cert.pem",

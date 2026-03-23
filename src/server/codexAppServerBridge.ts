@@ -9,6 +9,7 @@ const shellPath = prefixBin ? join(prefixBin, 'sh') : '/bin/sh'
 const homeDir = process.env.HOME ?? ''
 const promptInjectionPath = homeDir ? join(homeDir, '.openclaw-android', 'state', 'prompt-injection.json') : ''
 const shizukuStatusPath = homeDir ? join(homeDir, '.openclaw-android', 'capabilities', 'shizuku.json') : ''
+const openClawStateDir = homeDir ? join(homeDir, '.openclaw-android', 'state') : ''
 
 type JsonRpcCall = {
   jsonrpc: '2.0'
@@ -102,6 +103,38 @@ async function readJsonFile(path: string): Promise<Record<string, unknown> | nul
     return asRecord(parsed)
   } catch {
     return null
+  }
+}
+
+async function readTextTail(path: string, maxLines = 60): Promise<string> {
+  if (!path) return ''
+  try {
+    const raw = await readFile(path, 'utf8')
+    const lines = raw.split('\n')
+    return lines.slice(Math.max(0, lines.length - maxLines)).join('\n').trim()
+  } catch {
+    return ''
+  }
+}
+
+async function probeLoopbackHttp(port: number, path = '/'): Promise<{ ok: boolean; status: number; detail: string }> {
+  const targetUrl = `http://127.0.0.1:${String(port)}${path}`
+  try {
+    const response = await fetch(targetUrl, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(2500),
+    })
+    return {
+      ok: response.ok,
+      status: response.status,
+      detail: response.ok ? 'reachable' : `HTTP ${String(response.status)}`,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      detail: getErrorMessage(error, 'Connection refused'),
+    }
   }
 }
 
@@ -630,6 +663,42 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
       if (req.method === 'GET' && url.pathname === '/codex-api/meta/notifications') {
         const methods = await methodCatalog.listNotificationMethods()
         setJson(res, 200, { data: methods })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/openclaw/dashboard-status') {
+        const rawPort = Number.parseInt(url.searchParams.get('port') ?? '', 10)
+        if (!Number.isFinite(rawPort) || rawPort <= 0) {
+          setJson(res, 400, { error: 'Invalid port' })
+          return
+        }
+
+        const result = await probeLoopbackHttp(rawPort, '/chat?probe=1')
+        setJson(res, 200, {
+          ok: result.ok,
+          status: result.status,
+          detail: result.detail,
+          port: rawPort,
+        })
+        return
+      }
+
+      if (req.method === 'GET' && url.pathname === '/codex-api/openclaw/runtime-diagnostics') {
+        const gatewayStatus = await readJsonFile(join(openClawStateDir, 'gateway-status.json'))
+        const controlUiStatus = await readJsonFile(join(openClawStateDir, 'control-ui-status.json'))
+        const runtimeHealth = await readJsonFile(join(openClawStateDir, 'runtime-health.json'))
+        const heartbeatBootstrap = await readJsonFile(join(openClawStateDir, 'heartbeat-bootstrap.json'))
+        const gatewayLog = await readTextTail(join(openClawStateDir, 'gateway.log'))
+        const controlUiLog = await readTextTail(join(openClawStateDir, 'control-ui.log'))
+
+        setJson(res, 200, {
+          gatewayStatus,
+          controlUiStatus,
+          runtimeHealth,
+          heartbeatBootstrap,
+          gatewayLog,
+          controlUiLog,
+        })
         return
       }
 

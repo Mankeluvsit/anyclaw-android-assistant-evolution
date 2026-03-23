@@ -518,7 +518,8 @@ class ConversationManagerActivity : AppCompatActivity() {
         Thread {
             try {
                 val text = loadConversationTranscript(row)
-                val exportDir = File("/sdcard/Download/AnyClaw/exports")
+                val exportRoot = CodexServerManager.exportDirNameForPackage(packageName)
+                val exportDir = File("/sdcard/Download/$exportRoot/exports")
                 exportDir.mkdirs()
                 val safeName = row.title.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(48).ifEmpty { "conversation" }
                 val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())

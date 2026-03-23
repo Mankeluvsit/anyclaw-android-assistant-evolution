@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 type UiSettings = {
   pressEnterToSend: boolean
@@ -38,13 +38,22 @@ function saveSettings(value: UiSettings): void {
 
 const settings = ref<UiSettings>(loadSettings())
 
+if (typeof window !== 'undefined') {
+  watch(
+    settings,
+    (value) => {
+      saveSettings(value)
+    },
+    { deep: true },
+  )
+}
+
 export function useUiSettings() {
   function setPressEnterToSend(value: boolean): void {
     settings.value = {
       ...settings.value,
       pressEnterToSend: value,
     }
-    saveSettings(settings.value)
   }
 
   return {
